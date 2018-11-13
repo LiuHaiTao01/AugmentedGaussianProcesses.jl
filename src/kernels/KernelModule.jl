@@ -45,7 +45,7 @@ export InnerProduct, SquaredEuclidean, Identity
 export compute_hyperparameter_gradient
 export compute,plotkernel
 export getvalue,setvalue!,setfixed!,setfree!
-export getlengthscales, getvariance
+export getlengthscales, getvariance, getmetric
 export isARD,isIso
 export HyperParameter,HyperParameters,Interval, OpenBound,  NullBound
 abstract type KernelType end;

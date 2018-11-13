@@ -232,7 +232,7 @@ end
 function initFunctions!(model::GPModel)
     #Initialize all functions according to the type of models
     model.train = function(;iterations::Integer=0,callback=0,convergence=DefaultConvergence)
-        train!(model;iterations=iterations,callback=callback,Convergence=convergence)
+        train!(model;iterations=iterations,callback=callback)
     end
     model.fstar = function(X_test;covf=true)
         return fstar(model,X_test,covf=covf)
@@ -327,9 +327,10 @@ end
     kmeansalg::KMeansAlg # Online KMean algorithm
     indpoints_updated::Bool#Trigger for matrix computations
     m::Int64 #Number of wanted inducing points
-    Kmm::Matrix{Float64} #Kernel matrix
-    invKmm::Matrix{Float64} #Inverse Kernel matrix of inducing points
+    Kmm::Symmetric{Float64,Matrix{Float64}} #Kernel matrix
+    invKmm::Symmetric{Float64,Matrix{Float64}} #Inverse Kernel matrix of inducing points
     Ktilde::Vector{Float64} #Diagonal of the covariance matrix between inducing points and generative points
+    Knm::Matrix{Float64}
     κ::Matrix{Float64} #Kmn*invKmm
 end
 

@@ -21,6 +21,14 @@ function variational_updates!(model::SparseModel,iter::Integer)
     global_update!(model,grad_η_1,grad_η_2)
 end
 
+"""Compute the variational updates and the new learning rate for the sparse models"""
+function variational_updates!(model::OnlineGPModel,iter::Integer)
+    local_update!(model)
+    (grad_η_1,grad_η_2) = natural_gradient(model)
+    computeLearningRate_Stochastic!(model,iter,grad_η_1,grad_η_2);
+    global_update!(model,grad_η_1,grad_η_2)
+end
+
 """Update the global variational parameters of the linear models"""
 function global_update!(model::LinearModel,grad_1::Vector,grad_2::Matrix)
     model.η_1 = (1.0-model.ρ_s)*model.η_1 + model.ρ_s*grad_1;
@@ -35,8 +43,16 @@ function global_update!(model::FullBatchModel)
     model.μ = model.Σ*model.η_1 #Back to the normal distribution parameters (needed for α updates)
 end
 
-""""Update the global variational parameters of the sparse GP models"""
+"""Update the global variational parameters of the sparse GP models"""
 function global_update!(model::SparseModel,grad_1::Vector{Float64},grad_2::Symmetric{Float64,Matrix{Float64}})
+    model.η_1 = (1.0-model.ρ_s)*model.η_1 + model.ρ_s*grad_1;
+    model.η_2 = Symmetric((1.0-model.ρ_s)*model.η_2 + model.ρ_s*grad_2) #Update of the natural parameters with noisy/full natural gradient
+    model.Σ = -inv(model.η_2)*0.5;
+    model.μ = model.Σ*model.η_1 #Back to the normal distribution parameters (needed for α updates)
+end
+
+"""Update the global variational parameters of the online GP models"""
+function global_update!(model::OnlineGPModel,grad_1::Vector{Float64},grad_2::Symmetric{Float64,Matrix{Float64}})
     model.η_1 = (1.0-model.ρ_s)*model.η_1 + model.ρ_s*grad_1;
     model.η_2 = Symmetric((1.0-model.ρ_s)*model.η_2 + model.ρ_s*grad_2) #Update of the natural parameters with noisy/full natural gradient
     model.Σ = -inv(model.η_2)*0.5;

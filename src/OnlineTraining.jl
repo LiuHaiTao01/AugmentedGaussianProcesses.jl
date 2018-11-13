@@ -4,7 +4,7 @@ Function to train the given Online GP model, there are options to change the num
 give a callback function that will take the model and the actual step as arguments
 and give a convergence method to stop the algorithm given specific criteria
 """
-function train!(model::OnlineGPModel;iterations::Integer=0,callback=0,convergence=DefaultConvergence)
+function train!(model::OnlineGPModel;iterations::Integer=0,callback=0)
     if model.verbose > 0
       println("Starting training of online training of data with $(model.nSamples) samples with $(size(model.X,2)) features :, using the "*model.Name*" model")
     end
@@ -52,7 +52,7 @@ function train!(model::OnlineGPModel;iterations::Integer=0,callback=0,convergenc
     elseif isa(model,MultiClass) || isa(model,SparseMultiClass)
         model.Σ = broadcast(x->(-0.5*inv(x)),model.η_2)
     elseif !isa(model,BatchGPRegression)
-        model.Σ = -0.5*inv(model.η_2);
+        model.Σ = -Symmetric(0.5*inv(model.η_2));
     end
     computeMatrices!(model)
     model.Trained = true
@@ -76,15 +76,7 @@ function updateParameters!(model::OnlineGPModel,iter::Integer)
     update_points!(model) #Update the location of the inducing points
     computeMatrices!(model); #Recompute the matrices given the new batch of data and inducing points
     #Update the variational parameters given the type of model
-    if model.ModelType == BSVM
-        variablesUpdate_BSVM!(model,iter)
-    elseif model.ModelType == XGPC
-        variablesUpdate_XGPC!(model,iter)
-    elseif model.ModelType == Regression
-        variablesUpdate_Regression!(model,iter)
-    elseif typeof(model) <: MultiClassGPModel
-        variablesUpdate_MultiClass!(model,iter)
-    end
+    variational_updates!(model,iter)
 end
 
 """
@@ -100,10 +92,10 @@ function update_points!(model::OnlineGPModel)
         model.η_1 = vcat(model.η_1, zeros(Nnewpoints))
         Σ_temp = Matrix{Float64}(I,NCenters,NCenters)
         Σ_temp[1:model.m,1:model.m] = model.Σ
-        model.Σ = Σ_temp
+        model.Σ = Symmetric(Σ_temp)
         η_2temp = Matrix{Float64}(-0.5*I,NCenters,NCenters)
         η_2temp[1:model.m,1:model.m] = model.η_2
-        model.η_2 = η_2temp
+        model.η_2 = Symmetric(η_2temp)
         model.m = NCenters
         model.nFeatures = model.m
     end
@@ -115,11 +107,11 @@ Computate all necessary kernel matrices
 """
 function computeMatrices!(model::OnlineGPModel)
     if model.HyperParametersUpdated || model.indpoints_updated
-        model.Kmm = Symmetric(kernelmatrix(model.kmeansalg.centers,model.kernel)+Diagonal{Float64}(model.noise*I,model.m))
+        model.Kmm = Symmetric(kernelmatrix(model.kmeansalg.centers,model.kernel)+Diagonal{Float64}(getvalue(model.noise)*I,model.m))
         model.invKmm = inv(model.Kmm)
-        Knm = kernelmatrix(model.X[model.MBIndices,:],model.kmeansalg.centers,model.kernel)
-        model.κ = Knm/model.Kmm
-        model.Ktilde = diagkernelmatrix(model.X[model.MBIndices,:],model.kernel) - sum(model.κ.*Knm,dims=2)[:]
+        model.Knm = kernelmatrix(model.X[model.MBIndices,:],model.kmeansalg.centers,model.kernel)
+        model.κ = model.Knm/model.Kmm
+        model.Ktilde = kerneldiagmatrix(model.X[model.MBIndices,:],model.kernel) - vec(sum(model.κ.*model.Knm,dims=2))
         @assert count(model.Ktilde.<0)==0 "Ktilde has negative values"
     end
     model.HyperParametersUpdated = false;

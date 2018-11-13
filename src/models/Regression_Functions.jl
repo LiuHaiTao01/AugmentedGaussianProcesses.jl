@@ -13,6 +13,9 @@ end
 
 """Local updates for regression (empty)"""
 function local_update!(model::OnlineGPRegression)
+    model.gnoise = 1.0/model.nSamplesUsed * ( dot(model.y[model.MBIndices],model.y[model.MBIndices])
+    - 2.0*dot(model.y[model.MBIndices],model.κ*model.μ)
+    + sum((model.κ'*model.κ).*(model.μ*model.μ'+model.Σ)) + sum(model.Ktilde) )
 end
 
 "Update the variational parameters of the full batch model for GP regression (empty)"
@@ -27,10 +30,10 @@ function natural_gradient(model::SparseGPRegression)
     return (grad_1,grad_2)
 end
 
-
+"""Natural gradient computation for the online case"""
 function natural_gradient(model::OnlineGPRegression)
-    grad_1 = model.StochCoeff*model.κ'*model.y./model.gnoise
-    grad_2 = -0.5*(model.StochCoeff*(model.κ')*model.κ./model.gnoise+model.invKmm)
+    grad_1 = model.StochCoeff*model.κ'*model.y[model.MBIndices]./model.gnoise
+    grad_2 = -Symmetric(0.5*(model.StochCoeff*(model.κ')*model.κ./model.gnoise+model.invKmm))
     return (grad_1,grad_2)
 end
 

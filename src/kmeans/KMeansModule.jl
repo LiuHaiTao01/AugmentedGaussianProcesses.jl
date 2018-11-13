@@ -1,12 +1,11 @@
 """
     Module for computing the Kmeans approximation for finding inducing points, it is based on the k-means++ algorithm
 """
-module KMeansModule
+# module KMeansModule
 
 using Distributions
 using StatsBase
-using LinearAlgebra
-using Clustering
+using LinearAlgebra, Clustering, Distances
 using AugmentedGaussianProcesses.KernelModule
 
 export KMeansInducingPoints
@@ -55,7 +54,8 @@ function distance(X,C,kernel=0)
     if kernel == 0
         return norm(X-C,2)^2
     else
-        return compute(kernel,X,X)+compute(kernel,C,C)-2*compute(kernel,X,C)
+        c = KernelModule.kappa(kernel)
+        return c(evaluate(getmetric(kernel),X,X))+c(evaluate(getmetric(kernel),C,C))-2*c(evaluate(getmetric(kernel),X,C))
     end
 end
 
@@ -70,10 +70,10 @@ function update_model!(model,new_centers,new_vals)
         m_Σ = mean(diag(model.Σ))
         Σ_temp = 1.0*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
         Σ_temp[1:model.m,1:model.m] = model.Σ
-        model.Σ = Σ_temp
+        model.Σ = Symmetric(Σ_temp)
         η_2temp = -0.5/m_Σ*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
         η_2temp[1:model.m,1:model.m] = model.η_2
-        model.η_2 = η_2temp
+        model.η_2 = Symmetric(η_2temp)
         model.m = length(model.μ)
         model.nFeatures = model.m
         update_matrices!(model,new_centers)
@@ -81,11 +81,11 @@ function update_model!(model,new_centers,new_vals)
 end
 
 function update_matrices!(model,new_centers)
-    model.Kmm = Symmetric(kernelmatrix(model.kmeansalg.centers,model.kernel)+model.noise*Diagonal{Float64}(I,model.m))
+    model.Kmm = Symmetric(kernelmatrix(model.kmeansalg.centers,model.kernel)+getvalue(model.noise)*Diagonal{Float64}(I,model.m))
     model.invKmm = inv(model.Kmm)
-    Knm = kernelmatrix(model.X[model.MBIndices,:],model.kmeansalg.centers,model.kernel)
-    model.κ = Knm/model.Kmm
-    model.Ktilde = diagkernelmatrix(model.X[model.MBIndices,:],model.kernel) - sum(model.κ.*Knm,2)[:]
+    model.Knm = kernelmatrix(model.X[model.MBIndices,:],model.kmeansalg.centers,model.kernel)
+    model.κ = model.Knm/model.Kmm
+    model.Ktilde = kerneldiagmatrix(model.X[model.MBIndices,:],model.kernel) - vec(sum(model.κ.*model.Knm,dims=2))
     model.TopMatrixForPrediction = 0
     model.DownMatrixForPrediction = 0
 end
@@ -207,7 +207,8 @@ function init!(alg::CircleKMeans,X,y,model,k::Int64;lim=0.9)
     @assert lim < 1.0 && lim > 0 "lim should be between 0 and 1"
     alg.centers = reshape(X[1,:],1,size(X,2))
     alg.k = 1
-    update!(alg,X[2:end,:],nothing,model)
+    # update!(alg,X[2:end,:],nothing,model)
+    update!(alg,X[sample(2:size(X,1),20,replace=false),:],nothing,model)
 end
 
 function update!(alg::CircleKMeans,X,y,model)
@@ -233,7 +234,7 @@ function JSGP(mu,sig,f,sig_f)
     tot += 0.125*sum(sig./(sig_f)+(sig_f)./(sig) + (1.0 ./(sig_f)+1.0 ./(sig)).*((mu-f).^2))
 end
 function RandomAccept_Mean(alg,model,mu,sig,X,y)
-    diff_f = 1-exp(-0.5*(mu-y)[1]^2/sig[1])
+    diff_f = 1.0.-exp.(-0.5*(mu.-y)[1]^2/sig[1])
     d = find_nearest_center(X,alg.centers,model.kernel)[2]
     if d>2*(1-alg.lim[1])
         println("Distance point")
@@ -336,4 +337,4 @@ function mindistance(x::AbstractArray{T,N1},C::AbstractArray{T,N2},nC::Integer) 
   return mindist
 end
 
-end #module
+# end #module

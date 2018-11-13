@@ -8,7 +8,7 @@ mutable struct OnlineGPRegression <: OnlineGPModel
     @kernelfields
     @gaussianparametersfields
     @onlinefields
-
+    gnoise::Float64
     function OnlineGPRegression(X::AbstractArray,y::AbstractArray;kmeansalg::KMeansAlg=StreamOnline(),Sequential::Bool=false,AdaptiveLearningRate::Bool=false,
                                     Autotuning::Bool=false,optimizer::Optimizer=Adam(α=0.1),OptimizeIndPoints::Bool=false,
                                     nEpochs::Integer = 10000,batchsize::Integer=-1,κ_s::Float64=1.0,τ_s::Integer=100,
@@ -25,6 +25,7 @@ mutable struct OnlineGPRegression <: OnlineGPModel
             initOnline!(this,kmeansalg,Sequential,m)
             initStochastic!(this,AdaptiveLearningRate,batchsize,κ_s,τ_s,SmoothingWindow);
             initGaussian!(this,μ_init);
+            this.gnoise = noise
             return this;
     end
 end
