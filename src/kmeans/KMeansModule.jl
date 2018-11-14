@@ -66,14 +66,15 @@ end
 function update_model!(model,new_centers,new_vals)
     if size(new_centers,1) > 0
         model.μ = vcat(model.μ, new_vals)
-        model.η_1 = vcat(model.η_1, -0.5*new_vals)
         m_Σ = mean(diag(model.Σ))
-        Σ_temp = 1.0*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
+        Σ_temp = m_Σ*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
         Σ_temp[1:model.m,1:model.m] = model.Σ
         model.Σ = Symmetric(Σ_temp)
-        η_2temp = -0.5/m_Σ*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
-        η_2temp[1:model.m,1:model.m] = model.η_2
-        model.η_2 = Symmetric(η_2temp)
+        # η_2temp = -0.5/m_Σ*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
+        # η_2temp[1:model.m,1:model.m] = model.η_2
+        model.η_2 = -inv(model.Σ)*0.5
+        # model.η_1 = vcat(model.η_1,-0.5*inv(m_Σ)*new_vals)
+        model.η_1 = -0.5*model.η_2*model.μ
         model.m = length(model.μ)
         model.nFeatures = model.m
         update_matrices!(model,new_centers)
@@ -108,118 +109,6 @@ function update!(alg::OfflineKmeans,X,y,model)
     results = kmeans(X',alg.k)
     alg.centers = results.centers'
     return results
-end
-
-mutable struct Webscale <: KMeansAlg
-    k::Int64
-    v::Array{Int64,1}
-    centers::Array{Float64,2}
-    function Webscale()
-        return new()
-    end
-end
-
-
-function init!(alg::Webscale,X,y,model,k::Int64)
-    @assert size(X,1)>=k "Input data not big enough given $k"
-    alg.k = k;
-    alg.v = zeros(Int64,k);
-    alg.centers = X[sample(1:size(X,1),k),:];
-end
-
-function update!(alg::Webscale,X,y,model)
-    b = size(X,1)
-    d = zeros(Int64,b)
-    for i in 1:b
-        d[i] = find_nearest_center(X[i,:],alg.centers)[1]
-    end
-    for i in 1:b
-        alg.v[d[i]] += 1
-        η = 1/alg.v[d[i]]
-        alg.centers[d[i],:] = (1-η)*alg.centers[d[i],:]+ η*X[i,:]
-    end
-end
-
-mutable struct StreamOnline <: KMeansAlg
-    k_target::Int64
-    k_efficient::Int64
-    k::Int64
-    f::Float64
-    q::Int64
-    centers::Array{Float64,2}
-    function StreamOnline()
-        return new()
-    end
-end
-
-
-function init!(alg::StreamOnline,X,y,model,k::Int64)
-    @assert size(X,1)>=10 "The first batch of data should be bigger than 10 samples"
-    alg.k_target = k;
-    alg.k_efficient = max(1,ceil(Int64,(k-15)/5))
-    if alg.k_efficient+10 > size(X,1)
-         alg.k_efficient = 0
-    end
-    alg.centers = X[sample(1:size(X,1),alg.k_efficient+10,replace=false),:]
-    # alg.centers = X[1:(alg.k_efficient+10),:]
-    alg.k = alg.k_efficient+10
-    w=zeros(alg.k)
-    for i in 1:alg.k
-        w[i] = 0.5*find_nearest_center(alg.centers[i,:],alg.centers[1:alg.k.!=i,:])[2]
-        # w[i] = 0.5*find_nearest_center(X[i,:],alg.centers[1:alg.k.!=i,:])[2]
-    end
-    alg.f = sum(sort(w)[1:10]) #Take the 10 smallest values
-    alg.q = 0
-end
-
-function update!(alg::StreamOnline,X,y,model)
-    b = size(X,1)
-    new_centers = Matrix(0,size(X,2))
-    for i in 1:b
-        val = find_nearest_center(X[i,:],alg.centers)[2]
-        if val>(alg.f*rand())
-            # new_centers = vcat(new_centers,X[i,:]')
-            alg.centers = vcat(alg.centers,X[i,:]')
-            alg.q += 1
-            alg.k += 1
-        end
-        if alg.q >= alg.k_efficient
-            alg.q = 0
-            alg.f *=10
-        end
-    end
-    # alg.centers = vcat(alg.centers,new_centers)
-end
-
-
-
-mutable struct CircleKMeans <: KMeansAlg
-    lim::Float64
-    k::Int64
-    centers::Array{Float64,2}
-    function CircleKMeans(;lim=0.9)
-        return new(lim)
-    end
-end
-
-
-function init!(alg::CircleKMeans,X,y,model,k::Int64;lim=0.9)
-    @assert lim < 1.0 && lim > 0 "lim should be between 0 and 1"
-    alg.centers = reshape(X[1,:],1,size(X,2))
-    alg.k = 1
-    # update!(alg,X[2:end,:],nothing,model)
-    update!(alg,X[sample(2:size(X,1),20,replace=false),:],nothing,model)
-end
-
-function update!(alg::CircleKMeans,X,y,model)
-    b = size(X,1)
-    for i in 1:b
-        d = find_nearest_center(X[i,:],alg.centers,model.kernel)[2]
-        if d>2*(1-alg.lim)
-            alg.centers = vcat(alg.centers,X[i,:]')
-            alg.k += 1
-        end
-    end
 end
 
 ####

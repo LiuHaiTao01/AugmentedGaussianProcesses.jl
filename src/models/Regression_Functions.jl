@@ -32,7 +32,7 @@ end
 
 """Natural gradient computation for the online case"""
 function natural_gradient(model::OnlineGPRegression)
-    grad_1 = model.StochCoeff*model.κ'*model.y[model.MBIndices]./model.gnoise
+    grad_1 = model.StochCoeff*(model.κ'*model.y[model.MBIndices])./model.gnoise
     grad_2 = -Symmetric(0.5*(model.StochCoeff*(model.κ')*model.κ./model.gnoise+model.invKmm))
     return (grad_1,grad_2)
 end

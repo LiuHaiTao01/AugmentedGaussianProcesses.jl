@@ -88,6 +88,7 @@ function update_points!(model::OnlineGPModel)
     Nnewpoints = NCenters-model.m
     #Make the latent variables larger #TODO Preallocating them might be a better option
     if Nnewpoints!=0
+        println("Adapting to new number of points")
         model.μ = vcat(model.μ, zeros(Nnewpoints))
         model.η_1 = vcat(model.η_1, zeros(Nnewpoints))
         Σ_temp = Matrix{Float64}(I,NCenters,NCenters)
