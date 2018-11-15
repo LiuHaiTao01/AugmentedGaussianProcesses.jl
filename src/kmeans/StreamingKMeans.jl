@@ -1,3 +1,5 @@
+##From paper "An Algorithm for Online K-Means Clustering" ##
+
 
 mutable struct StreamOnline <: KMeansAlg
     k_target::Int64

@@ -4,7 +4,7 @@ using Clustering, LinearAlgebra, Random
 pyplot()
 using AugmentedGaussianProcesses
 
-
+Random.seed!(42)
 include("functions_test_online.jl")
 
 kernel = AugmentedGaussianProcesses.RBFKernel(0.5)
@@ -26,7 +26,7 @@ X = generate_uniform_data(n,nDim,5)
 # X = generate_gaussian_data(n,nDim)'
 X = (X.-mean(X))./sqrt(var(X))
 if nDim == 1
-    y = sample_gaussian_process(X,noise)
+    y = tanh.(2.0.*sample_gaussian_process(X,noise))
     mid = floor(Int64,n/2)
     ind = shuffle(1:n); ind_test = sort(ind[1:mid]); ind = sort(ind[(mid+1):end]);
     X_test = X[ind_test,:]; y_test = y[ind_test]
@@ -69,17 +69,32 @@ end
 # kernel = AugmentedGaussianProcesses.LaplaceKernel(0.5)
 
 ps = []
-offline = true
-webscale = true
-streaming=true
+offline = !true
+webscale = !true
+streaming=!true
 full = true
-circlek = true
+circlek = !true
 randk = true
 iterations = 10
+### Non sparse GP :
+if full
+    t_full = @elapsed global fullgp = AugmentedGaussianProcesses.BatchGPRegression(X,y,kernel=kernel,noise=noise)
+    t_full = @elapsed fullgp.train()
+    y_full,sig_full = fullgp.predictproba(X_test)
+    y_train,sig_train = fullgp.predictproba(X)
+    if nDim == 1
+        p4 = plotting1D(X,y,[0],[0],X_test,y_full,sig_full,"Full batch GP",full=true,ylim=lims)
+    elseif nDim == 2
+        p4 = plotting2D(X,y,[0 0],0,x1_test,x2_test,y_full,minf,maxf,"Full batch GP",full=true)
+    end
+    push!(ps,p4)
+    println("Full GP ($t_full s)\n\tRMSE (train) : $(RMSE(fullgp.predict(X),y))\n\tRMSE (test) : $(RMSE(y_full,y_test))")
+end
 ##Basic Offline KMeans
 if offline
-    t_off = @elapsed offgp = AugmentedGaussianProcesses.SparseGPRegression(X,y,m=k,Stochastic=true,Autotuning=false,batchsize=b,verbose=0,kernel=kernel)
-    t_off += @elapsed offgp.train(iterations=500)
+    t_off = @elapsed offgp = AugmentedGaussianProcesses.SparseGPRegression(X,y,m=10,Stochastic=false,Autotuning=true,OptimizeIndPoints=true,batchsize=b,verbose=0,kernel=kernel)
+    plotspart = AugmentedGaussianProcesses.IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims)
+    t_off += @elapsed offgp.train(iterations=200,callback=plotspart)
     y_off, sig_off = offgp.predictproba(X_test)
     y_indoff = offgp.predict(offgp.inducingPoints)
     y_trainoff, sig_trainoff = offgp.predictproba(X)
@@ -88,6 +103,10 @@ if offline
     elseif nDim == 2
         p1 = plotting2D(X,y,offgp.inducingPoints,y_indoff,x1_test,x2_test,y_off,minf,maxf,"Sparse GP")
     end
+    kl_off = KLGP.(y_trainoff,sig_trainoff,y_train,sig_train)
+    js_off = JSGP.(y_trainoff,sig_trainoff,y_train,sig_train)
+    s = sortperm(vec(X))
+    plot!(twinx(),X[s],[kl_off[s] js_off[s]],lab=["KL" "JS"])
     push!(ps,p1)
     println("Offline KMeans ($t_off s)\n\tRMSE (train) : $(RMSE(offgp.predict(X),y))\n\tRMSE (test) : $(RMSE(y_off,y_test))")
 end
@@ -123,24 +142,9 @@ if streaming
     push!(ps,p3)
     println("Streaming KMeans ($t_str s)\n\tRMSE (train) : $(RMSE(onstrgp.predict(X),y))\n\tRMSE (test) : $(RMSE(y_str,y_test))")
 end
-### Non sparse GP :
-
-if full
-    t_full = @elapsed global fullgp = AugmentedGaussianProcesses.BatchGPRegression(X,y,kernel=kernel,noise=noise)
-    t_full = @elapsed fullgp.train()
-    y_full,sig_full = fullgp.predictproba(X_test)
-    y_train,sig_train = fullgp.predictproba(X)
-    if nDim == 1
-        p4 = plotting1D(X,y,[0],[0],X_test,y_full,sig_full,"Full batch GP",full=true,ylim=lims)
-    elseif nDim == 2
-        p4 = plotting2D(X,y,[0 0],0,x1_test,x2_test,y_full,minf,maxf,"Full batch GP",full=true)
-    end
-    push!(ps,p4)
-    println("Full GP ($t_full s)\n\tRMSE (train) : $(RMSE(fullgp.predict(X),y))\n\tRMSE (test) : $(RMSE(y_full,y_test))")
-end
 #### Custom K finding method with constant limit
 if circlek
-    t_const = @elapsed global onconstgp = AugmentedGaussianProcesses.OnlineGPRegression(X,y,τ_s=1,kmeansalg=AugmentedGaussianProcesses.CircleKMeans(lim=0.95),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+    t_const = @elapsed global onconstgp = AugmentedGaussianProcesses.OnlineGPRegression(X,y,kmeansalg=AugmentedGaussianProcesses.CircleKMeans(lim=0.9),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
     t_const = @elapsed onconstgp.train(iterations=iterations,callback=plotthisshit)
     y_const,sig_const = onconstgp.predictproba(X_test)
     y_indconst = onconstgp.predict(onconstgp.kmeansalg.centers)
@@ -163,7 +167,8 @@ end
 
 #### Custom K with random accept using both f and X
 if randk
-    t_rand = @elapsed onrandgp = AugmentedGaussianProcesses.OnlineGPRegression(X,y,τ_s=10,kmeansalg=AugmentedGaussianProcesses.DataSelection(),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+    t_rand = @elapsed onrandgp = AugmentedGaussianProcesses.OnlineGPRegression(X,y,τ_s=10,kmeansalg=AugmentedGaussianProcesses.DataSelection(func=LikelihoodImprovement,lim=10),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+    # t_rand = @elapsed onrandgp = AugmentedGaussianProcesses.OnlineGPRegression(X,y,τ_s=10,kmeansalg=AugmentedGaussianProcesses.DataSelection(lim=[0.9,0.4]),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
     t_rand = @elapsed onrandgp.train(iterations=iterations,callback=plotthisshit)
     y_rand,sig_rand = onrandgp.predictproba(X_test)
     y_indrand = onrandgp.predict(onrandgp.kmeansalg.centers)
@@ -201,9 +206,9 @@ end
 
 
 
-println("Sparsity efficiency :
-    \t Constant lim : KL: $(KLGP(y_trainconst,sig_trainconst,y_train,sig_train)), JS: $(JSGP(y_trainconst,sig_trainconst,y_train,sig_train))
-    \t Random accept : KL: $(KLGP(y_trainrand,sig_trainrand,y_train,sig_train)), JS: $(JSGP(y_trainrand,sig_trainrand,y_train,sig_train))")
+# println("Sparsity efficiency :
+    # \t Constant lim : KL: $(KLGP(y_trainconst,sig_trainconst,y_train,sig_train)), JS: $(JSGP(y_trainconst,sig_trainconst,y_train,sig_train))
+    # \t Random accept : KL: $(KLGP(y_trainrand,sig_trainrand,y_train,sig_train)), JS: $(JSGP(y_trainrand,sig_trainrand,y_train,sig_train))")
 # \t Offline : $(KLGP(y_trainoff,sig_trainoff,y,noise))
 # \t Webscale : $(KLGP(y_trainweb,sig_trainweb,y,noise))
 # \t Streaming : $(KLGP(y_trainstr,sig_trainstr,y,noise))

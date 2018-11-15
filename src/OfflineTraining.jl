@@ -16,12 +16,12 @@ function train!(model::OfflineGPModel;iterations::Integer=0,callback=0,Convergen
     iter::Int64 = 1; conv = Inf;
     while true #loop until one condition is matched
         try #Allow for keyboard interruption without losing the model
-            updateParameters!(model,iter) #Update all the variational parameters
-            model.Trained=true
-            # println(mean(model.μ[1]))
             if model.Autotuning && (iter%model.AutotuningFrequency == 0) && iter >= 3
                 updateHyperParameters!(model) #Update the hyperparameters
             end
+            updateParameters!(model,iter) #Update all the variational parameters
+            model.Trained=true
+            # println(mean(model.μ[1]))
             reset_prediction_matrices!(model) #Reset predicton matrices
             if callback != 0
                     callback(model,iter) #Use a callback method if put by user

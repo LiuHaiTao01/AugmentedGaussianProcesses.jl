@@ -25,14 +25,20 @@ Return also the variance if `covf=true`
 function fstar(model::SparseModel,X_test::AbstractArray;covf::Bool=true)
     model.TopMatrixForPrediction = model.invKmm*model.μ
     if covf
-        model.DownMatrixForPrediction = model.invKmm*(Diagonal{Float64}(I,model.nFeatures)-model.Σ*model.invKmm)
+        model.DownMatrixForPrediction = model.invKmm*(model.Σ*model.invKmm-Diagonal{Float64}(I,model.nFeatures))
     end
     k_star = kernelmatrix(X_test,model.inducingPoints,model.kernel)
     mean_fstar = k_star*model.TopMatrixForPrediction
     if !covf
         return mean_fstar
     end
-    cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .- sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2)[:]
+    # cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .+ diag(k_star*model.DownMatrixForPrediction*k_star')
+    cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .+ vec(sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2))
+    cov_fstar2 = zero(cov_fstar)
+    for i in 1:size(X_test,1)
+        cov_fstar2[i] = kerneldiagmatrix(X_test[i,:],model.kernel)[1] + getvalue(model.noise) + dot(model.DownMatrixForPrediction*k_star[i,:],k_star[i,:])
+    end
+    println(norm(cov_fstar2-cov_fstar))
     return mean_fstar,cov_fstar
 end
 
@@ -45,14 +51,14 @@ function fstar(model::OnlineGPModel,X_test::AbstractArray;covf::Bool=true)
         model.TopMatrixForPrediction = model.invKmm*model.μ
     end
     if covf && model.DownMatrixForPrediction == 0
-      model.DownMatrixForPrediction = (model.invKmm*(Diagonal{Float64}(I,model.nFeatures)-model.Σ*model.invKmm))
+      model.DownMatrixForPrediction = model.invKmm*(model.Σ*model.invKmm-Diagonal{Float64}(I,model.nFeatures))
     end
     k_star = kernelmatrix(X_test,model.kmeansalg.centers,model.kernel)
     mean_fstar = k_star*model.TopMatrixForPrediction
     if !covf
         return mean_fstar
     else
-        cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .- sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2)[:]
+        cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) + vec(sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2))
         return mean_fstar,cov_fstar
     end
 end

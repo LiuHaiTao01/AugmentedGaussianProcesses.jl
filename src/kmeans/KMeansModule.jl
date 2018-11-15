@@ -63,11 +63,13 @@ end
 
 
 #TODO CAN BE CONSIDERABLY OPTIMIZED
-function update_model!(model,new_centers,new_vals)
+function update_model!(model,new_centers,μ_new,σ_new)
     if size(new_centers,1) > 0
-        model.μ = vcat(model.μ, new_vals)
-        m_Σ = mean(diag(model.Σ))
-        Σ_temp = m_Σ*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
+        # model.μ = vcat(model.μ, new_vals)
+
+        model.μ = vcat(model.μ, μ_new)
+        # m_Σ = mean(diag(model.Σ))
+        Σ_temp = Matrix(Diagonal(σ_new[1]*I,model.m+1))#m_Σ*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
         Σ_temp[1:model.m,1:model.m] = model.Σ
         model.Σ = Symmetric(Σ_temp)
         # η_2temp = -0.5/m_Σ*Matrix{Float64}(I,model.m+size(new_centers,1),model.m+size(new_centers,1))
@@ -91,26 +93,11 @@ function update_matrices!(model,new_centers)
     model.DownMatrixForPrediction = 0
 end
 
-mutable struct OfflineKmeans <: KMeansAlg
-    kernel::Kernel
-    k::Int64
-    centers::Array{Float64,2}
-    function OfflineKmeans()
-        return new()
-    end
-end
-
-function init!(alg::OfflineKmeans,X,y,model,k::Int64)
-    @assert size(X,1)>=k "Input data not big enough given $k"
-    alg.k = k
-end
-
-function update!(alg::OfflineKmeans,X,y,model)
-    results = kmeans(X',alg.k)
-    alg.centers = results.centers'
-    return results
-end
-
+include("StreamingKMeans.jl")
+include("Webscale.jl")
+include("CircleKMeans.jl")
+include("DataSelection.jl")
+include("OfflineKMeans.jl")
 ####
 function KLGP(mu,sig,f,sig_f)
     tot = -0.5*length(f)
@@ -121,57 +108,6 @@ end
 function JSGP(mu,sig,f,sig_f)
     tot = -0.25*length(f)
     tot += 0.125*sum(sig./(sig_f)+(sig_f)./(sig) + (1.0 ./(sig_f)+1.0 ./(sig)).*((mu-f).^2))
-end
-function RandomAccept_Mean(alg,model,mu,sig,X,y)
-    diff_f = 1.0.-exp.(-0.5*(mu.-y)[1]^2/sig[1])
-    d = find_nearest_center(X,alg.centers,model.kernel)[2]
-    if d>2*(1-alg.lim[1])
-        println("Distance point")
-        return true
-    elseif diff_f > alg.lim[2] && d<2*(1-alg.lim[1]-0.05)
-        println("Likelihood point")
-        return true
-    end
-    return false
-    # println(sig[1])
-    #return sig[1]>0.8*(1-diff_f)
-    # return KLGP(mu[1],sig[1],y,0.001)>10
-    # return (d>(1-2*alg.lim[1]) || diff_f>0.5)
-    # return JSGP(mu[1],sig[1],y,0.001)>10
-    # return sig[1]>0.8
-    # return (0.5*sqrt(sig[1])+0.5*diff_f)>rand()
-    # return 1.0*sqrt(sig[1])>rand()
-end
-
-mutable struct DataSelection <: KMeansAlg
-    accepting_function::Function ###From given parameters return if point is accepted (return true or false)
-    lim
-    k::Int64
-    centers::Array{Float64,2}
-    function DataSelection(;func=RandomAccept_Mean,lim=[0.9,0.4])
-        return new(func,lim)
-    end
-end
-
-
-function init!(alg::DataSelection,X,y,model,k::Int64)
-    n = size(X,1)
-    init_k = max(1,ceil(Int64,n/10))
-    alg.centers = reshape(X[sample(1:n,init_k,replace=false),:],init_k,size(X,2))
-    alg.k = init_k
-end
-
-function update!(alg::DataSelection,X,y,model)
-    b = size(X,1)
-    for i in 1:b
-        mu,sig = model.fstar(reshape(X[i,:],1,size(X,2)))
-        # println("σ: $sig,\tabs(mu-f): $(1-exp(-0.5*(mu-y[i])[1]^2/sig[1])),\tquant: $(log(sqrt(sig))+0.5*(y[i]-mu[1])^2/sig[1])")
-        if alg.accepting_function(alg,model,mu,sig,X[i,:],y[i])
-            alg.centers = vcat(alg.centers,X[i,:]')
-            alg.k += 1
-            update_model!(model,reshape(X[i,:],1,size(X,2)),[y[i]])
-        end
-    end
 end
 
 #--------------------------------------------------------------#

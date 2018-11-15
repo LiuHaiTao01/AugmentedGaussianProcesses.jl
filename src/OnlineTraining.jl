@@ -22,7 +22,7 @@ function train!(model::OnlineGPModel;iterations::Integer=0,callback=0)
     model.Trained = true
     iter::Int64 = 1; conv = Inf;
     while true #do while loop
-        if callback != 0
+        if callback != 0 && iter > 1
                 callback(model,iter) #Use a callback method if put by user
         end
         updateParameters!(model,iter) #Update all the variational parameters
@@ -86,6 +86,7 @@ function update_points!(model::OnlineGPModel)
     update!(model.kmeansalg,model.X[model.MBIndices,:],model.y[model.MBIndices],model)
     NCenters = model.kmeansalg.k
     Nnewpoints = NCenters-model.m
+    computeMatrices!(model)
     #Make the latent variables larger #TODO Preallocating them might be a better option
     if Nnewpoints!=0
         println("Adapting to new number of points")
@@ -108,7 +109,7 @@ Computate all necessary kernel matrices
 """
 function computeMatrices!(model::OnlineGPModel)
     if model.HyperParametersUpdated || model.indpoints_updated
-        model.Kmm = Symmetric(kernelmatrix(model.kmeansalg.centers,model.kernel)+Diagonal{Float64}(getvalue(model.noise)*I,model.m))
+        model.Kmm = Symmetric(kernelmatrix(model.kmeansalg.centers,model.kernel)+Diagonal{Float64}(getvalue(model.noise)*I,model.kmeansalg.k))
         model.invKmm = inv(model.Kmm)
         model.Knm = kernelmatrix(model.X[model.MBIndices,:],model.kmeansalg.centers,model.kernel)
         model.κ = model.Knm/model.Kmm
