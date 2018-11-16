@@ -31,8 +31,8 @@ mutable struct StreamingGP <: OnlineGPModel
             initStochastic!(this,AdaptiveLearningRate,batchsize,κ_s,τ_s,SmoothingWindow);
             initGaussian!(this,μ_init);
             this.gnoise = noise
-            this.oldΣ = copy(model.Σ)
-            this.oldμ = copy(model.μ)
+            this.oldΣ = copy(this.Σ)
+            this.oldμ = copy(this.μ)
             return this;
     end
 end
@@ -42,17 +42,17 @@ function updateParameters!(model::StreamingGP,iter::Integer)
     #Set as old values
     model.oldK = copy(model.Kmm)
     model.oldinvK = copy(model.invKmm)
-    model.oldZ = copy(model.inducingPoints)
+    model.oldZ = copy(model.kmeansalg.centers)
     model.D = inv(Symmetric(inv(model.oldΣ)-model.oldinvK))
     model.oldm = copy(model.m)
     ### DO STUFF WITH HYPERPARAMETERS HERE
     computeMatrices!(model)
     ŷ = vcat(model.y[model.MBIndices],model.D*inv(model.oldΣ)*model.oldμ);
-    Kab = kernelmatrix(model.oldZ,model.inducingPoints,model.kernel)
+    Kab = kernelmatrix(model.oldZ,model.kmeansalg.centers,model.kernel)
     Kfb = vcat(model.Knm,Kab)
-    Σŷ = Matrix(Diagonal(I*model.gnoise),model.nSamplesUsed+model.oldm)
+    Σŷ = Matrix(Diagonal(I*model.gnoise,model.nSamplesUsed+model.oldm))
     Σŷ[model.nSamplesUsed+1:end,model.nSamplesUsed+1:end] = model.D
-    A = model.invKmm*model.Kfb'*inv(Σŷ)
+    A = model.invKmm*Kfb'*inv(Σŷ)
     model.μ = A*ŷ
-    model.Σ = inv(model.invKmm+A*model.Kfb*model.invKmm)
+    model.Σ = Symmetric(model.invKmm+A*Kfb*model.invKmm)
 end

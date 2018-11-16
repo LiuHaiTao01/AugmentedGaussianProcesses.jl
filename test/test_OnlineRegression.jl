@@ -7,7 +7,7 @@ using AugmentedGaussianProcesses
 Random.seed!(42)
 include("functions_test_online.jl")
 ############ O OOO O O O O O O O O O O O
-kernel = AugmentedGaussianProcesses.RBFKernel(1.0)
+kernel = AugmentedGaussianProcesses.RBFKernel(0.5)
 ############ OOOOO O O O O O OOO O O O O OO O
 function sample_gaussian_process(X,noise)
     N = size(X,1)
@@ -65,7 +65,7 @@ if nDim == 1
 elseif nDim == 2
 end
 k = 50
-b = 10
+b = 500
 dorand = false
 visual = !true
 if dorand

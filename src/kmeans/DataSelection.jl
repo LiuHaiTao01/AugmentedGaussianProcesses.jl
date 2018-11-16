@@ -78,25 +78,25 @@ function get_likelihood_diffs(model,alg,new_points)
     s = model.StochCoeff
     k_u = kernelmatrix(alg.centers,new_points,model.kernel)
     a = model.invKmm*k_u
-    c = 1e5.+kerneldiagmatrix(new_points,model.kernel) - diag(k_u'*a)
+    c = kerneldiagmatrix(new_points,model.kernel) - diag(k_u'*a)
     kfu = kernelmatrix(model.X[model.MBIndices,:],new_points,model.kernel)
-    println("c: $c")
+    # println("c: $c")
 
     b = [1.0/sqrt(c[i]).*(model.Knm*model.invKmm*k_u[:,i]-kfu[:,i]) for i in 1:N_new]
     A = inv(model.gnoise*I + model.κ*model.Knm')
     v = [1+s*dot(b[i],A*b[i]) for i in 1:N_new]
     diffL = zeros(N_new)
     diffL .+= log.(v)
-    println("LogV = $(-0.5*diffL)")
+    # println("LogV = $(-0.5*diffL)")
     diffL .+= - 1.0/model.gnoise*[tr(b[i]*b[i]') for i in 1:N_new]
-    println("LogV+tr = $(-0.5*diffL)")
+    # println("LogV+tr = $(-0.5*diffL)")
     diffL .+= - [dot(model.y[model.MBIndices],(A*b[i]*b[i]'*A)/v[i]*model.y[model.MBIndices]) for i in 1:N_new]
     # model.MBIndices = copy(old_ind)
     # model.indpoints_updated = true
     # computeMatrices!(model)
     println("Diffl = $(-0.5*diffL)")
     # return ifelse(c.<model.gnoise,0.1,-0.5*s*diffL)
-    return -0.5.*s*diffL
+    return -0.5.*diffL
 end
 
 

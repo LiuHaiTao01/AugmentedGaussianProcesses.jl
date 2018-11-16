@@ -58,6 +58,7 @@ t_full = @elapsed global fullgp = BatchGPRegression(X,y,kernel=kernel,noise=nois
 
 k = 50
 b = 10
+visual = true
 if visual
     if nDim ==1
         plotthisshit = AugmentedGaussianProcesses.IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims)
@@ -91,3 +92,33 @@ elseif nDim == 2
 end
 push!(ps,pm)
 println("Constant Lim ($t_m s)\n\tRMSE (train) : $(RMSE(model.predict(X),y))\n\tRMSE (test) : $(RMSE(y_m,y_test))")
+
+
+
+if nDim == 2
+    p = plottingtruth(X,y_test,X_test,x1_test,x2_test)
+    push!(ps,p)
+    display(plot(ps...)); gui()
+else
+    display(plot(ps...)); gui()
+end
+
+if !visual
+    ind_x = 7 #1 for time 7 for iterations
+    p_RMSE = plot(title="RMSE")
+    p_LL = plot(title="Log Likelihood")
+    p_KL = plot(title="KL training")
+    p_JS = plot(title="JS training")
+    p_m = plot(title="# ind points")
+    for (i,v) in enumerate(metrics)
+        plot!(p_RMSE,v[:,ind_x],v[:,2],lab=labels[i])
+        plot!(p_LL,v[:,ind_x],v[:,3],lab=labels[i])
+        plot!(p_KL,v[:,ind_x],v[:,4],lab=labels[i],yaxis=:log)
+        plot!(p_JS,v[:,ind_x],v[:,5],lab=labels[i],yaxis=:log)
+        plot!(p_m,v[:,ind_x],v[:,6],lab=labels[i])
+    end
+    plot!(p_RMSE,[0,maximum(vcat(metrics...)[:,ind_x])],[(RMSE(y_full,y_test)),(RMSE(y_full,y_test))],lab="Full GP",legend=:none)
+    plot!(p_LL,[0,maximum(vcat(metrics...)[:,ind_x])],[(-MeanTestLogLikelihood(y_full,y_test,noise)),(-MeanTestLogLikelihood(y_full,y_test,noise))],lab="Full GP",legend=:none)
+    p_metrics = plot(p_RMSE,p_LL,p_KL,p_JS,p_m)
+    display(p_metrics)
+end
