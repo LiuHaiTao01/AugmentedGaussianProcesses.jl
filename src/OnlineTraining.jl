@@ -18,10 +18,12 @@ function train!(model::OnlineGPModel;iterations::Integer=0,callback=0)
             #If the adaptive learning rate is selected, compute a first expectation of the gradient with MCMC (if restarting training, avoid this part)
             # MCInit!(model)
     # end
+    model.MBIndices = StatsBase.sample(1:model.nSamples,model.nSamplesUsed,replace=false)
     computeMatrices!(model)
     model.Trained = true
     iter::Int64 = 1; conv = Inf;
     while true #do while loop
+        sampleMiniBatch!(model,iter)
         if callback != 0 && iter > 1
                 callback(model,iter) #Use a callback method if put by user
         end
@@ -59,9 +61,9 @@ function train!(model::OnlineGPModel;iterations::Integer=0,callback=0)
 end
 
 """
-    Subfunction to update all the parameters (except for hyperparameters of the model)
+    Sample a new minibatch
 """
-function updateParameters!(model::OnlineGPModel,iter::Integer)
+function sampleMiniBatch!(model::OnlineGPModel,iter::Integer)
     #Select a new batch of data given the method choice
     if model.Sequential
         newbatchsize = min(model.nSamplesUsed-1,model.nSamples-model.lastindex)
@@ -73,6 +75,12 @@ function updateParameters!(model::OnlineGPModel,iter::Integer)
     else
         model.MBIndices = StatsBase.sample(1:model.nSamples,model.nSamplesUsed,replace=false) #Sample nSamplesUsed points randomly
     end
+end
+
+"""
+    Subfunction to update all the parameters (except for hyperparameters of the model)
+"""
+function updateParameters!(model::OnlineGPModel,iter::Integer)
     update_points!(model) #Update the location of the inducing points
     computeMatrices!(model); #Recompute the matrices given the new batch of data and inducing points
     #Update the variational parameters given the type of model
@@ -89,7 +97,7 @@ function update_points!(model::OnlineGPModel)
     computeMatrices!(model)
     #Make the latent variables larger #TODO Preallocating them might be a better option
     if Nnewpoints!=0
-        println("Adapting to new number of points")
+        # println("Adapting to new number of points")
         model.μ = vcat(model.μ, zeros(Nnewpoints))
         model.η_1 = vcat(model.η_1, zeros(Nnewpoints))
         Σ_temp = Matrix{Float64}(I,NCenters,NCenters)

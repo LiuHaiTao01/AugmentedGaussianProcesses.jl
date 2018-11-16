@@ -34,11 +34,6 @@ function fstar(model::SparseModel,X_test::AbstractArray;covf::Bool=true)
     end
     # cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .+ diag(k_star*model.DownMatrixForPrediction*k_star')
     cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .+ vec(sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2))
-    cov_fstar2 = zero(cov_fstar)
-    for i in 1:size(X_test,1)
-        cov_fstar2[i] = kerneldiagmatrix(X_test[i,:],model.kernel)[1] + getvalue(model.noise) + dot(model.DownMatrixForPrediction*k_star[i,:],k_star[i,:])
-    end
-    println(norm(cov_fstar2-cov_fstar))
     return mean_fstar,cov_fstar
 end
 

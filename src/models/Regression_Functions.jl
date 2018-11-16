@@ -50,6 +50,15 @@ function ELBO(model::SparseGPRegression)
     return -ELBO_v
 end
 
+
+"""ELBO function for the sparse variational GP Regression"""
+function ELBO(model::OnlineGPRegression)
+    ELBO_v = model.StochCoeff*ExpecLogLikelihood(model)
+    ELBO_v -= GaussianKL(model)
+    return -ELBO_v
+end
+
+
 """Return the expectation of the loglikelihood"""
 function ExpecLogLikelihood(model::BatchGPRegression)
     return -0.5*dot(model.y,model.invK*model.y)+0.5*logdet(model.invK)-0.5*model.nSamples*log(2π)
@@ -57,6 +66,13 @@ end
 
 """Return the expectation of the loglikelihood for the sparse model"""
 function ExpecLogLikelihood(model::SparseGPRegression)
+    return -0.5*(model.nSamplesUsed*log(2π*model.gnoise)
+    + (sum((model.y[model.MBIndices]-model.κ*model.μ).^2)
+    + sum(model.Ktilde)+sum((model.κ*model.Σ).*model.κ))/model.gnoise)
+end
+
+"""Return the expectation of the loglikelihood for the sparse model"""
+function ExpecLogLikelihood(model::OnlineGPRegression)
     return -0.5*(model.nSamplesUsed*log(2π*model.gnoise)
     + (sum((model.y[model.MBIndices]-model.κ*model.μ).^2)
     + sum(model.Ktilde)+sum((model.κ*model.Σ).*model.κ))/model.gnoise)

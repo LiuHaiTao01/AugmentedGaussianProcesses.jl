@@ -56,6 +56,7 @@ export KMeansModule
 export LinearBSVM, BatchBSVM, SparseBSVM
 export BatchXGPC, SparseXGPC, OnlineXGPC, GibbsSamplerGPC
 export BatchGPRegression, SparseGPRegression, OnlineGPRegression
+export StreamingGP
 export BatchStudentT, SparseStudentT
 export MultiClass, SparseMultiClass
 #General class definitions
@@ -85,6 +86,7 @@ include("models/GibbsSamplerGPC.jl")
 include("models/BatchGPRegression.jl")
 include("models/SparseGPRegression.jl")
 include("models/OnlineRegression.jl")
+include("models/StreamingGP.jl")
 include("models/BatchStudentT.jl")
 include("models/SparseStudentT.jl")
 include("models/MultiClass.jl")
