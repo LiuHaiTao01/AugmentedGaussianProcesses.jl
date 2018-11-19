@@ -1,21 +1,21 @@
 using AugmentedGaussianProcesses
 using Distributions, LinearAlgebra, SpecialFunctions, Random
-using Plots; pyplot()
+using Plots; gr()
 
 Random.seed!(42)
 include("functions_test_online.jl")
 noise = 0.1
-k = RBFKernel(1.0)
+kernel = RBFKernel(0.5)
 function sample_gaussian_process(X,noise)
     N = size(X,1)
-    K = AugmentedGaussianProcesses.kernelmatrix(X,kernel)+noise*Diagonal{Float64}(I,N)
+    global K = AugmentedGaussianProcesses.kernelmatrix(X,kernel)+noise*Diagonal{Float64}(I,N)
     return rand(MvNormal(zeros(N),K))
 end
 nDim = 1
-sequential = false
-n = 250
+sequential = true
+n = 1000
 N_test= 50
-noise=0.01
+noise=0.1
 # X,f = generate_random_walk_data(n,nDim,0.1,monotone)
 X = generate_uniform_data(n,nDim,5)
 # X = generate_gaussian_data(n,nDim)'
@@ -28,6 +28,11 @@ if nDim == 1
     X_grid = range(minimum(X[:,1]),length=N_test,stop=maximum(X[:,1]))
     x1_test= X_test; x2_test =X_test
     minf=minimum(y); maxf=maximum(y)
+    if sequential
+        s = sortperm(X[:])
+        y = y[s]
+        X = X[s,:]
+    end
 elseif nDim == 2
     x1_test = range(minimum(X[:,1]),stop=maximum(X[:,1]),length=N_test)
     x2_test = range(minimum(X[:,2]),stop=maximum(X[:,2]),length=N_test)
@@ -56,14 +61,16 @@ t_full = @elapsed global fullgp = BatchGPRegression(X,y,kernel=kernel,noise=nois
     println("Full GP ($t_full s)\n\tRMSE (train) : $(RMSE(fullgp.predict(X),y))\n\tRMSE (test) : $(RMSE(y_full,y_test))")
 
 
-k = 50
+k = 10
 b = 10
+iterations = 100
 visual = true
 if visual
+    global anim = Animation()
     if nDim ==1
-        plotthisshit = AugmentedGaussianProcesses.IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims)
+        plotthisshit = AugmentedGaussianProcesses.IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims,anim=anim)
     else
-        plotthisshit = AugmentedGaussianProcesses.IntermediatePlotting(X_test,x1_test,x2_test,y_test)
+        plotthisshit = AugmentedGaussianProcesses.IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims,anim=anim)
     end
 else
     datacontain, plotthisshit = getmetrics(X_test,x1_test,x2_test,y_test,y_train,sig_train)
@@ -71,10 +78,14 @@ end
 
 
 
-t_m = @elapsed global model = StreamingGP(X,y,Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+# t_m = @elapsed global model = StreamingGP(X,y,kmeansalg=OfflineKmeans(),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+# t_m = @elapsed global model = StreamingGP(X,y,kmeansalg=DataSelection(lim=0.95),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+t_m = @elapsed global model = StreamingGP(X,y,kmeansalg=CircleKMeans(lim=0.95),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+
 t_m += @elapsed model.train(iterations=iterations,callback=plotthisshit)
-push!(metrics,vcat(data...))
-push!(labels,"StreamingGP")
+gif(anim,"anim_online.gif",fps=5)
+# push!(metrics,vcat(data...))
+# push!(labels,"StreamingGP")
 y_m, sig_m = model.predictproba(X_test)
 y_indm = model.predict(model.kmeansalg.centers)
 y_trainm, sig_trainm = model.predictproba(X)

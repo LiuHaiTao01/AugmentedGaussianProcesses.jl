@@ -116,16 +116,23 @@ function plotting2D(iter,indices,X,f,ind_points,pred_ind,x1_test,x2_test,pred,mi
     return p
 end
 
-function IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims)
+function IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims;anim=nothing)
     return function plotevolution(model,iter)
         y_pred,sig_pred = model.predictproba(X_test)
         y_train,sig_train = model.predictproba(model.X)
         if typeof(model) <: AugmentedGaussianProcesses.OnlineGPModel
             y_ind = model.predict(model.kmeansalg.centers)
             if size(X_test,2) == 1
-                display(plotting1D(iter,model.MBIndices,model.X,model.y,model.noise,model.kmeansalg.centers,y_ind,X_test,y_pred,sig_pred,y_train,sig_train,model.Name,lims))
+                p=plotting1D(iter,model.MBIndices,model.X,model.y,model.noise,model.kmeansalg.centers,y_ind,X_test,y_pred,sig_pred,y_train,sig_train,model.Name,lims)
             else
-                display(plotting2D(iter,model.MBIndices,model.X,model.y,model.kmeansalg.centers,y_ind,x1_test,x2_test,y_pred,minimum(model.y),maximum(model.y),model.Name))
+                p=plotting2D(iter,model.MBIndices,model.X,model.y,model.kmeansalg.centers,y_ind,x1_test,x2_test,y_pred,minimum(model.y),maximum(model.y),model.Name)
+            end
+            if anim!=nothing
+                println("Adding frame")
+                frame(anim,p)
+            else
+                display(p)
+                sleep(0.01)
             end
         else
             y_ind = model.predict(model.inducingPoints)
@@ -135,7 +142,6 @@ function IntermediatePlotting(X_test,x1_test,x2_test,y_test,lims)
                 display(plotting2D(iter,model.MBIndices,model.X,model.y,model.kmeansalg.centers,y_ind,x1_test,x2_test,y_pred,minimum(model.y),maximum(model.y),model.Name))
             end
         end
-        sleep(0.01)
     end
 end
 end

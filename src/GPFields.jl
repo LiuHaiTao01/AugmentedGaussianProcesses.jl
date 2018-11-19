@@ -252,6 +252,8 @@ function initFunctions!(model::GPModel)
             studenttpredict(model,X_test)
         elseif typeof(model) <: MultiClassGPModel
             multiclasspredict(model,X_test)
+        elseif typeof(model) <: StreamingGP
+            predict(model,X_test)
         end
     end
     model.predictproba = function(X_test)
@@ -269,6 +271,8 @@ function initFunctions!(model::GPModel)
             studenttpredictproba(model,X_test)
         elseif typeof(model) <: MultiClassGPModel
             multiclasspredictproba(model,X_test)
+        elseif typeof(model) <: StreamingGP
+            predictproba(model,X_test)
         end
     end
     model.elbo = function()
@@ -324,6 +328,7 @@ end
     Sequential::Bool #Defines if we know how many point will be treated at the beginning
     alldataparsed::Bool #Check if all data has been treated
     lastindex::Int64
+    batchsize::Int64
     kmeansalg::KMeansAlg # Online KMean algorithm
     indpoints_updated::Bool#Trigger for matrix computations
     m::Int64 #Number of wanted inducing points
@@ -346,18 +351,19 @@ function initOnline!(model,alg::KMeansAlg,Sequential::Bool,m::Int64)
     if Sequential
         if typeof(alg) <: StreamOnline || typeof(alg) <: DataSelection
             # newbatchsize = min(max(15,floor(Int64,(model.m-15)/5.0))-1,model.nSamples-model.lastindex)
-            newbatchsize = min(model.nSamplesUsed-1,model.nSamples-model.lastindex)
-            model.MBIndices = model.lastindex:(model.lastindex+newbatchsize)
+            model.batchsize = model.nSamplesUsed-1
+            model.MBIndices = model.lastindex:(model.lastindex+model.batchsize-1)
             init!(model.kmeansalg,model.X[model.MBIndices,:],model.y[model.MBIndices],model,model.m)
         else
-            @assert model.nSamples >= model.m
-            newbatchsize = min(model.m-1,model.nSamples-model.lastindex)
-            model.MBIndices = model.lastindex:(model.lastindex+newbatchsize)
+            @assert model.nSamplesUsed >= model.m
+            model.batchsize = model.nSamplesUsed
+            model.MBIndices = model.lastindex:(model.lastindex+model.batchsize-1)
             init!(model.kmeansalg,model.X[model.MBIndices,:],model.y[model.MBIndices],model,model.m)
         end
     else
         model.MBIndices = StatsBase.sample(1:model.nSamples,model.m,replace=false) #Sample nSamplesUsed indices for the minibatches
         init!(model.kmeansalg,model.X,model.y,model,model.m)
+        model.batchsize = model.nSamplesUsed
     end
     model.m = model.kmeansalg.k
     model.nFeatures = model.m

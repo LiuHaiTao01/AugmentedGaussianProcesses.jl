@@ -9,7 +9,7 @@ using LinearAlgebra, Clustering, Distances
 using AugmentedGaussianProcesses.KernelModule
 
 export KMeansInducingPoints
-export KMeansAlg, StreamOnline, Webscale, CircleKMeans, DataSelection
+export KMeansAlg, StreamOnline, Webscale, CircleKMeans, DataSelection, OfflineKmeans
 export total_cost
 export init!, update!
 

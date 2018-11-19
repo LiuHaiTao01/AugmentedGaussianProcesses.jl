@@ -15,7 +15,7 @@ function init!(alg::CircleKMeans,X,y,model,k::Int64;lim=0.9)
     alg.centers = reshape(X[1,:],1,size(X,2))
     alg.k = 1
     # update!(alg,X[2:end,:],nothing,model)
-    update!(alg,X[sample(2:size(X,1),20,replace=false),:],nothing,model)
+    update!(alg,X,nothing,model)
 end
 
 function update!(alg::CircleKMeans,X,y,model)

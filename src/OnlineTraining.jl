@@ -66,10 +66,10 @@ end
 function sampleMiniBatch!(model::OnlineGPModel,iter::Integer)
     #Select a new batch of data given the method choice
     if model.Sequential
-        newbatchsize = min(model.nSamplesUsed-1,model.nSamples-model.lastindex)
-        model.MBIndices = model.lastindex:(model.lastindex+newbatchsize) #Sample the next nSamplesUsed points
-        model.lastindex += newbatchsize
-        if newbatchsize < (model.nSamplesUsed-1)
+        model.batchsize = min(model.nSamplesUsed,model.nSamples-model.lastindex+1)
+        model.MBIndices = model.lastindex:(model.lastindex+model.batchsize-1) #Sample the next nSamplesUsed points
+        model.lastindex += model.batchsize-1
+        if model.batchsize < (model.nSamplesUsed)
             model.alldataparsed=true #Indicate all data has been visited
         end
     else

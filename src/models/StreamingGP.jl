@@ -9,11 +9,19 @@ mutable struct StreamingGP <: OnlineGPModel
     gnoise::Float64
     oldK::Symmetric{Float64,Matrix{Float64}}
     oldinvK::Symmetric{Float64,Matrix{Float64}}
-    D::Symmetric{Float64,Matrix{Float64}}
+    Da::Symmetric{Float64,Matrix{Float64}}
     oldZ::Matrix{Float64}
     oldm::Integer
     oldΣ::Symmetric{Float64}
     oldμ::Vector{Float64}
+    L
+    invL
+    invD
+    Σŷ
+    invΣŷ
+    Kfb
+    ŷ
+    A
     function StreamingGP(X::AbstractArray,y::AbstractArray;kmeansalg::KMeansAlg=CircleKMeans(),Sequential::Bool=false,AdaptiveLearningRate::Bool=false,
                                     Autotuning::Bool=false,optimizer::Optimizer=Adam(α=0.1),OptimizeIndPoints::Bool=false,
                                     nEpochs::Integer = 1000,batchsize::Integer=-1,κ_s::Float64=0.5,τ_s::Integer=0,
@@ -40,19 +48,42 @@ end
 
 function updateParameters!(model::StreamingGP,iter::Integer)
     #Set as old values
+    println(iter," ",model.m)
     model.oldK = copy(model.Kmm)
     model.oldinvK = copy(model.invKmm)
     model.oldZ = copy(model.kmeansalg.centers)
-    model.D = inv(Symmetric(inv(model.oldΣ)-model.oldinvK))
+    model.oldΣ= copy(model.Σ)
     model.oldm = copy(model.m)
+    model.oldμ = copy(model.μ)
+    model.Da = inv(Symmetric(inv(model.oldΣ)-model.oldinvK))
+    update_points!(model)
     ### DO STUFF WITH HYPERPARAMETERS HERE
     computeMatrices!(model)
-    ŷ = vcat(model.y[model.MBIndices],model.D*inv(model.oldΣ)*model.oldμ);
+    model.L = cholesky(model.Kmm)
+    model.invL = inv(model.L)
+    model.ŷ = vcat(model.y[model.MBIndices],model.Da*inv(model.oldΣ)*model.oldμ);
     Kab = kernelmatrix(model.oldZ,model.kmeansalg.centers,model.kernel)
-    Kfb = vcat(model.Knm,Kab)
-    Σŷ = Matrix(Diagonal(I*model.gnoise,model.nSamplesUsed+model.oldm))
-    Σŷ[model.nSamplesUsed+1:end,model.nSamplesUsed+1:end] = model.D
-    A = model.invKmm*Kfb'*inv(Σŷ)
-    model.μ = A*ŷ
-    model.Σ = Symmetric(model.invKmm+A*Kfb*model.invKmm)
+    model.Kfb = vcat(model.Knm,Kab)
+    model.Σŷ = Matrix(Diagonal(I*model.gnoise,model.batchsize+model.oldm))
+    model.Σŷ[model.batchsize+1:end,model.batchsize+1:end] = model.Da
+    model.invΣŷ = inv(model.Σŷ)
+    model.A = model.invKmm*model.Kfb'*model.invΣŷ
+    model.invD = inv(I + inv(model.L)*model.Kfb'*model.invΣŷ*model.Kfb*inv(model.L))
+    invΣ = Symmetric(model.invKmm+model.A*model.Kfb*model.invKmm)
+    model.Σ = inv(invΣ)
+    model.μ = invΣ\model.A*model.ŷ
+end
+
+
+function predict(model::StreamingGP,X_test)
+    Ksb = kernelmatrix(X_test,model.kmeansalg.centers,model.kernel)
+    Kss = kerneldiagmatrix(X_test,model.kernel)
+    return ms = Ksb*model.invL*inv(model.D)*model.invL*model.Kfb*model.Σŷ*model.ŷ
+end
+
+function predictproba(model::StreamingGP,X_test)
+    Ksb = kernelmatrix(X_test,model.kmeansalg.centers,model.kernel)
+    Kss = kerneldiagmatrix(X_test,model.kernel)
+    ms = Ksb*model.invL*model.invD*model.invL*model.Kfb*model.Σŷ
+    Vss = Kss - diag(Ksb*model.invKmm*Ksb')+diag(Ksb*model.invL*model.invD*model.invL*Ksb')
 end

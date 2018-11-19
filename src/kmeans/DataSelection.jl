@@ -75,7 +75,7 @@ function get_likelihood_diffs(model,alg,new_points)
     # model.MBIndices = collect(1:model.nSamples)
     # model.indpoints_updated = true
     # computeMatrices!(model)
-    s = model.StochCoeff
+    s = 1.0#model.StochCoeff
     k_u = kernelmatrix(alg.centers,new_points,model.kernel)
     a = model.invKmm*k_u
     c = kerneldiagmatrix(new_points,model.kernel) - diag(k_u'*a)
