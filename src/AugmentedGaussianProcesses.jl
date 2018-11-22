@@ -51,6 +51,9 @@ using Dates
 using Expectations
 using SparseArrays
 using Base: show
+
+using Plots
+
 #Exported models
 export KMeansModule
 export LinearBSVM, BatchBSVM, SparseBSVM

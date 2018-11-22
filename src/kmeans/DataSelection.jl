@@ -14,7 +14,7 @@ end
 function init!(alg::DataSelection,X,y,model,k::Int64)
     n = size(X,1)
     # init_k = max(1,ceil(Int64,n/10))
-    init_k = 10
+    init_k = min(10,n)
     alg.centers = reshape(X[sample(1:n,init_k,replace=false),:],init_k,size(X,2))
     alg.k = init_k
 end

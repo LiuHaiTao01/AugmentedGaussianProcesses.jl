@@ -55,20 +55,25 @@ function updateParameters!(model::StreamingGP,iter::Integer)
     model.oldΣ= copy(model.Σ)
     model.oldm = copy(model.m)
     model.oldμ = copy(model.μ)
-    model.Da = inv(Symmetric(inv(model.oldΣ)-model.oldinvK))
+    model.Da = Symmetric(inv(model.oldΣ)-model.oldinvK)
     update_points!(model)
     ### DO STUFF WITH HYPERPARAMETERS HERE
     computeMatrices!(model)
     model.L = cholesky(model.Kmm)
     model.invL = inv(model.L)
-    model.ŷ = vcat(model.y[model.MBIndices],model.Da*inv(model.oldΣ)*model.oldμ);
+    model.ŷ = vcat(model.y[model.MBIndices],model.Da\(model.oldΣ\model.oldμ));
     Kab = kernelmatrix(model.oldZ,model.kmeansalg.centers,model.kernel)
+    Kab[1:model.oldm,1:model.oldm] = Kab[1:model.oldm,1:model.oldm] + jittering*I
+    # if model.m >= 2 && model.oldm >= 2
+    # display(heatmap(Kab))
+    # sleep(0.1)
+    # end
     model.Kfb = vcat(model.Knm,Kab)
     model.Σŷ = Matrix(Diagonal(I*model.gnoise,model.batchsize+model.oldm))
-    model.Σŷ[model.batchsize+1:end,model.batchsize+1:end] = model.Da
+    model.Σŷ[model.batchsize+1:end,model.batchsize+1:end] = inv(model.Da)
     model.invΣŷ = inv(model.Σŷ)
-    model.A = model.invKmm*model.Kfb'*model.invΣŷ
-    model.invD = inv(I + inv(model.L)*model.Kfb'*model.invΣŷ*model.Kfb*inv(model.L))
+    model.A = model.invKmm*model.Kfb'/model.Σŷ
+    model.invD = inv(I + inv(model.L)*model.Kfb'*model.invΣŷ*model.Kfb*inv(model.L)+jittering*I)
     invΣ = Symmetric(model.invKmm+model.A*model.Kfb*model.invKmm)
     model.Σ = inv(invΣ)
     model.μ = invΣ\model.A*model.ŷ
@@ -78,7 +83,7 @@ end
 function predict(model::StreamingGP,X_test)
     Ksb = kernelmatrix(X_test,model.kmeansalg.centers,model.kernel)
     Kss = kerneldiagmatrix(X_test,model.kernel)
-    return ms = Ksb*model.invL*inv(model.D)*model.invL*model.Kfb*model.Σŷ*model.ŷ
+    return ms = Ksb*model.invL*model.invD*model.invL*model.Kfb*model.Σŷ*model.ŷ
 end
 
 function predictproba(model::StreamingGP,X_test)

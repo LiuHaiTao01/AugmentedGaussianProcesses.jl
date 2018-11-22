@@ -1,6 +1,6 @@
 using AugmentedGaussianProcesses
 using Distributions, LinearAlgebra, SpecialFunctions, Random
-using Plots; gr()
+using Plots; pyplot()
 
 Random.seed!(42)
 include("functions_test_online.jl")
@@ -12,7 +12,7 @@ function sample_gaussian_process(X,noise)
     return rand(MvNormal(zeros(N),K))
 end
 nDim = 1
-sequential = true
+sequential = false
 n = 1000
 N_test= 50
 noise=0.1
@@ -61,9 +61,9 @@ t_full = @elapsed global fullgp = BatchGPRegression(X,y,kernel=kernel,noise=nois
     println("Full GP ($t_full s)\n\tRMSE (train) : $(RMSE(fullgp.predict(X),y))\n\tRMSE (test) : $(RMSE(y_full,y_test))")
 
 
-k = 10
+k = 1
 b = 10
-iterations = 100
+iterations = 500
 visual = true
 if visual
     global anim = Animation()
@@ -80,10 +80,10 @@ end
 
 # t_m = @elapsed global model = StreamingGP(X,y,kmeansalg=OfflineKmeans(),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
 # t_m = @elapsed global model = StreamingGP(X,y,kmeansalg=DataSelection(lim=0.95),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
-t_m = @elapsed global model = StreamingGP(X,y,kmeansalg=CircleKMeans(lim=0.95),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
+t_m = @elapsed global model = StreamingGP(X,y,kmeansalg=CircleKMeans(lim=0.9),Sequential=sequential,m=k,batchsize=b,verbose=0,kernel=kernel)
 
 t_m += @elapsed model.train(iterations=iterations,callback=plotthisshit)
-gif(anim,"anim_online.gif",fps=5)
+gif(anim,"anim_online.gif",fps=15)
 # push!(metrics,vcat(data...))
 # push!(labels,"StreamingGP")
 y_m, sig_m = model.predictproba(X_test)
