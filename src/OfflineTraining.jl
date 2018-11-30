@@ -63,7 +63,7 @@ function train!(model::OfflineGPModel;iterations::Integer=0,callback=0,Convergen
     elseif isa(model,MultiClass) || isa(model,SparseMultiClass)
         model.Σ = -inv.(model.η_2).*0.5
     elseif !isa(model,BatchGPRegression)
-        model.Σ = -inv(model.η_2)*0.5;
+        model.Σ = -inv.(model.η_2)*0.5;
     end
     model.Trained = true
 end
@@ -87,8 +87,8 @@ end
 "Compute of kernel matrices for the full batch GPs"
 function computeMatrices!(model::FullBatchModel)
     if model.HyperParametersUpdated
-        model.Knn = Symmetric(kernelmatrix(model.X,model.kernel) + Diagonal{Float64}((getvalue(model.noise)+getvariance(model.kernel)*jittering)*I,model.nFeatures))
-        model.invK = inv(model.Knn)
+        model.K .= (Symmetric(kernelmatrix(model.X,kernel) + getvariance(kernel)*jittering*I) for kernel in model.kernel)
+        model.invK = inv.(model.K)
         model.HyperParametersUpdated = false
     end
 end
@@ -96,14 +96,14 @@ end
 "Computate of kernel matrices for the sparse GPs"
 function computeMatrices!(model::SparseModel)
     if model.HyperParametersUpdated
-        model.Kmm = Symmetric(kernelmatrix(model.inducingPoints,model.kernel)+Diagonal{Float64}((getvalue(model.noise)+getvariance(model.kernel)*jittering)*I,model.nFeatures))
-        model.invKmm = inv(model.Kmm)
+        model.K = broadcast((kernel,Xᵤ)->Symmetric(kernelmatrix(Xᵤ,kernel)+getvariance(kernel)*jittering*I),model.kernel,model.inducingPoints)
+        model.invK = inv.(model.K)
     end
     if model.HyperParametersUpdated || model.Stochastic #Also when batches change
-        kernelmatrix!(model.Knm,model.X[model.MBIndices,:],model.inducingPoints,model.kernel)
-        model.κ = model.Knm*model.invKmm
-        model.Ktilde = kerneldiagmatrix(model.X[model.MBIndices,:],model.kernel).+ getvalue(model.noise) - sum(model.κ.*model.Knm,dims=2)[:]
-        @assert count(model.Ktilde.<0)==0 "Ktilde has negative values"
+        model.Knm .= broadcast((kernel,Xᵤ)->kernelmatrix(model.X[model.MBIndices,:],Xᵤ,kernel),model.kernel,model.inducingPoints)
+        model.κ .= model.Knm.*model.invK
+        model.Ktilde .= broadcast((kernel,κ,Knm)->kerneldiagmatrix(model.X[model.MBIndices,:],kernel) .+ getvariance(kernel)*jittering - vec(sum(κ.*Knm,dims=2)),model.kernel,model.κ,model.Knm)
+        # @assert count(model.Ktilde.<0)==0 "Ktilde has negative values"
     end
     model.HyperParametersUpdated=false
 end
@@ -233,11 +233,11 @@ function computeLearningRate_Stochastic!(model::GPModel,iter::Integer,grad_1,gra
             model.τ = (1.0 - model.ρ_s)*model.τ + 1.0
         else
             #Simple model of time decreasing learning rate
-            model.ρ_s = (iter+model.τ_s)^(-model.κ_s)
+            model.ρ_s .= (iter.+model.τ_s).^(-model.κ_s)
         end
     else
       #Non-Stochastic case
-      model.ρ_s = 1.0
+      model.ρ_s = ones(model.nLatent)
     end
 end
 

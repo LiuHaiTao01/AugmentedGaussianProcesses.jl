@@ -23,16 +23,14 @@ Compute the mean of the predicted latent distribution of f on X_test for sparse 
 Return also the variance if `covf=true`
 """
 function fstar(model::SparseModel,X_test::AbstractArray;covf::Bool=true)
-    model.TopMatrixForPrediction = model.invKmm*model.μ
-    if covf
-        model.DownMatrixForPrediction = model.invKmm*(Diagonal{Float64}(I,model.nFeatures)-model.Σ*model.invKmm)
-    end
-    k_star = kernelmatrix(X_test,model.inducingPoints,model.kernel)
-    mean_fstar = k_star*model.TopMatrixForPrediction
+    model.TopMatrixForPrediction = model.invK.*model.μ
+    k_star = [kernelmatrix(X_test,Xᵤ,kernel) for (Xᵤ,kernel) in zip(model.inducingPoints,model.kernel)]
+    mean_fstar = k_star.*model.TopMatrixForPrediction
     if !covf
         return mean_fstar
     end
-    cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .- sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2)[:]
+    model.DownMatrixForPrediction = model.invK.*(I.-model.Σ.*model.invK)
+    cov_fstar = broadcast((kernel,k,A)->kerneldiagmatrix(X_test,kernel) .+ getvariance(kernel)*jittering .- vec(sum((k*A).*k,dims=2)), model.kernel,k_star,model.DownMatrixForPrediction)
     return mean_fstar,cov_fstar
 end
 

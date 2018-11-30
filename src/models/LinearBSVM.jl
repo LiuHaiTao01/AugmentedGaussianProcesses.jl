@@ -5,10 +5,10 @@ mutable struct LinearBSVM <: LinearModel
     @commonfields
     @functionfields
     @linearfields
-    @latentfields
     @gaussianparametersfields
-
     @stochasticfields
+    α::DenseVector{Float64}
+    θ::DenseVector{Float64}
     #Constructor
     function LinearBSVM(X::AbstractArray,y::AbstractArray;Stochastic::Bool=false,AdaptiveLearningRate::Bool=true,Autotuning::Bool=false,optimizer::Optimizer=Adam(),
                                     nEpochs::Integer = 2000,batchsize::Integer=-1,κ_s::Float64=1.0,τ_s::Integer=100,

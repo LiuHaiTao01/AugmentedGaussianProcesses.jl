@@ -2,11 +2,11 @@
 mutable struct GibbsSamplerGPC <: FullBatchModel
     @commonfields
     @functionfields
-    @latentfields
     @gaussianparametersfields
-
     @kernelfields
     @samplingfields
+    α::DenseVector{Float64}
+    θ::DenseVector{Float64}
     "GibbsSamplerGPC Constructor"
     function GibbsSamplerGPC(X::AbstractArray,y::AbstractArray;burninsamples::Integer = 200, samplefrequency::Integer=100,
                                     Autotuning::Bool=false,optimizer::Optimizer=Adam(),nEpochs::Integer = 200,

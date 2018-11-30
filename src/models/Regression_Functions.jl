@@ -6,13 +6,12 @@ end
 
 """Local updates for regression (empty)"""
 function local_update!(model::SparseGPRegression)
-    model.gnoise = 1.0/model.nSamplesUsed * ( dot(model.y[model.MBIndices],model.y[model.MBIndices])
-    - 2.0*dot(model.y[model.MBIndices],model.κ*model.μ)
-    + sum((model.κ'*model.κ).*(model.μ*model.μ'+model.Σ)) + sum(model.Ktilde) )
-end
-
-"""Local updates for regression (empty)"""
-function local_update!(model::OnlineGPRegression)
+    model.gnoise .=  broadcast((y,κ,μ,Σ)->
+        1.0/model.nSamplesUsed*(
+        dot(y[model.MBIndices],y[model.MBIndices])
+        -2.0*dot(y[model.MBIndices],κ*μ)
+        +sum((κ'*κ).*(μ*μ'+Σ))),
+        model.y,model.κ,model.μ,model.Σ)
 end
 
 "Update the variational parameters of the full batch model for GP regression (empty)"
@@ -22,15 +21,10 @@ end
 
 """Natural gradient computation for the sparse case"""
 function natural_gradient(model::SparseGPRegression)
-    grad_1 = model.StochCoeff.*(model.κ'*model.y[model.MBIndices])./model.gnoise
-    grad_2 = Symmetric(-0.5*(model.StochCoeff*(model.κ')*model.κ./model.gnoise+model.invKmm))
-    return (grad_1,grad_2)
-end
-
-
-function natural_gradient(model::OnlineGPRegression)
-    grad_1 = model.StochCoeff*model.κ'*model.y./model.gnoise
-    grad_2 = -0.5*(model.StochCoeff*(model.κ')*model.κ./model.gnoise+model.invKmm)
+    grad_1 = broadcast((κ,y,σ)->model.StochCoeff.*(κ'*y[model.MBIndices])./σ,
+                        model.κ,model.y,model.gnoise)
+    grad_2 = broadcast((κ,σ,invK)->Symmetric(-0.5*(model.StochCoeff*κ'*κ./σ+invK)),
+                        model.κ,model.gnoise,model.invK)
     return (grad_1,grad_2)
 end
 
@@ -54,9 +48,9 @@ end
 
 """Return the expectation of the loglikelihood for the sparse model"""
 function ExpecLogLikelihood(model::SparseGPRegression)
-    return -0.5*(model.nSamplesUsed*log(2π*model.gnoise)
-    + (sum((model.y[model.MBIndices]-model.κ*model.μ).^2)
-    + sum(model.Ktilde)+sum((model.κ*model.Σ).*model.κ))/model.gnoise)
+    return -0.5*model.nSamplesUsed*sum(broadcast((σ,y,κ,μ,K̃,Σ)->log(2π*σ)
+    + (sum((y[model.MBIndices]-κ*μ).^2)
+    + sum(K̃)+sum((κ*Σ).*κ))/σ,model.gnoise,model.y,model.κ,model.μ,model.Ktilde,model.Σ))
 end
 
 """Return functions computing the gradients of the ELBO given the kernel hyperparameters for a Regression Model"""
@@ -116,4 +110,19 @@ function inducingpoints_gradient(model::SparseGPRegression)
             end
         end
         return gradients_inducing_points
+end
+
+
+"""Take the labels y and adapt the model to it"""
+function treatlabels!(model::Union{BatchGPRegression,SparseGPRegression},y::DenseArray{T,N}) where {T,N}
+    if N > 2
+        @error "Cannot use a tensor of labels"
+    elseif N == 2
+        (n,d) = size(y)
+        model.nLatent = d
+        model.y = model.AT([y[:,i] for i in 1:d])
+    else
+        model.nLatent = 1
+        model.y = model.AT([y])
+    end
 end

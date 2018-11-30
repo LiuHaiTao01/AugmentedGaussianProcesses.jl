@@ -11,14 +11,16 @@ end
 
 @def commonfields begin
     #Data
-    X::Matrix{Float64} #Feature vectors
-    y::Vector #Output (-1,1 for classification, real for regression, matrix for multiclass)
+    AT::UnionAll
+    X::AbstractArray #Feature vectors
+    y::DenseVector #Output (-1,1 for classification, real for regression, matrix for multiclass)
     ModelType::GPModelType; #Type of model
     Name::String #Name of the model
     nSamples::Int64 # Number of data points
     nDim::Int64
     nFeatures::Int64 # Number of features
-    noise::KernelModule.HyperParameter{Float64}  #Regularization parameter of the noise
+    nLatent::Int64 # Number of latent functions f
+    IndPriors::Bool # Determines if fs have same prior
     ϵ::Float64  #Desired Precision on ||ELBO(t+1)-ELBO(t)||))
     evol_conv::Vector{Float64} #Used for convergence estimation
     prev_params::Any
@@ -42,15 +44,16 @@ the noise `noise`, the convergence threshold `ϵ`, the initial number of iterati
 the `verboseLevel` (from 0 to 3), enabling `Autotuning`, the `AutotuningFrequency` and
 what `optimizer` to use
 """
-function initCommon!(model::GPModel,X::Array{T,N},y::Vector{T2},noise::Float64,ϵ::Float64,nEpochs::Integer,verbose::Integer,Autotuning::Bool,AutotuningFrequency::Integer,optimizer::Optimizer) where {T<:Real,T2<:Real,N}
+function initCommon!(model::GPModel,AT::UnionAll,X::Array{T,N},y::Array{T2},IndPriors::Bool,noise::Float64,ϵ::Float64,nEpochs::Integer,verbose::Integer,Autotuning::Bool,AutotuningFrequency::Integer,optimizer::Optimizer) where {T<:Real,T2<:Real,N}
     @assert (size(y,1)==size(X,1)) "There is a dimension problem with the data size(y)!=size(X)";
+    model.AT = AT
+    model.IndPriors = IndPriors
     if N == 1
-        model.X = reshape(X,length(X),1)
+        model.X = AT(reshape(X,length(X),1))
     else
-        model.X = X;
+        model.X = AT(X);
     end
-    model.y = y;
-    @assert noise >= 0 "noise should be a positive float";  model.noise = KernelModule.HyperParameter{Float64}(noise,KernelModule.interval(KernelModule.OpenBound{Float64}(zero(Float64)),KernelModule.NullBound{Float64}()))
+    treatlabels!(model,y)
     @assert ϵ > 0 "ϵ should be a positive float"; model.ϵ = ϵ;
     @assert nEpochs > 0 "nEpochs should be positive"; model.nEpochs = nEpochs;
     @assert (verbose > -1 && verbose < 4) "verbose should be in {0,1,2,3}, here value is $verbose"; model.verbose = verbose;
@@ -59,7 +62,6 @@ function initCommon!(model::GPModel,X::Array{T,N},y::Vector{T2},noise::Float64,�
     model.nSamples = size(X,1); #model.nSamplesUsed = model.nSamples;
     model.nDim= size(X,2);
     model.Trained = false; model.Stochastic = false;
-    model.TopMatrixForPrediction = 0; model.DownMatrixForPrediction = 0; model.MatricesPrecomputed=false;
     model.HyperParametersUpdated = true;
     model.evol_conv = Vector()
 end
@@ -75,10 +77,10 @@ end
     AdaptiveLearningRate::Bool
       κ_s::Float64 #Parameters for decay of learning rate (iter + κ)^-τ in case adaptative learning rate is not used
       τ_s::Float64
-    ρ_s::Float64 #Learning rate for CAVI
-    g::Vector{Float64} # g & h are expected gradient value for computing the adaptive learning rate and τ is an intermediate
-    h::Float64
-    τ::Float64
+    ρ_s::DenseVector{Float64} #Learning rate for CAVI
+    g::DenseVector{Vector{Float64}} # g & h are expected gradient value for computing the adaptive learning rate and τ is an intermediate
+    h::DenseVector{Float64}
+    τ::DenseVector{Float64}
     SmoothingWindow::Int64
 end
 """
@@ -87,13 +89,14 @@ end
 function initStochastic!(model::GPModel,AdaptiveLearningRate::Bool,batchsize::Integer,κ_s::Real,τ_s::Real,SmoothingWindow::Integer)
     #Initialize parameters specific to models using SVI and check for consistency
     model.Stochastic = true; model.nSamplesUsed = batchsize; model.AdaptiveLearningRate = AdaptiveLearningRate;
-    model.κ_s = κ_s; model.τ_s = τ_s; model.SmoothingWindow = SmoothingWindow;
+    model.κ_s = model.AT(ones(model.nLatent)*κ_s); model.τ_s = model.AT(ones(model.nLatent)*τ_s); model.SmoothingWindow = SmoothingWindow;
     if (model.nSamplesUsed <= 0 || model.nSamplesUsed > model.nSamples)
         @warn "Invalid value for the batchsize : $batchsize, setting it to the number of inducing points"
         model.nSamplesUsed = model.m;
     end
     model.StochCoeff = model.nSamples/model.nSamplesUsed
-    model.τ = 50;
+    model.τ = model.AT(ones(model.nLatent)*50);
+    model.ρ_s = model.AT(ones(model.nLatent))
 end
 
 
@@ -101,10 +104,11 @@ end
     Parameters for the kernel parameters, including the covariance matrix of the prior
 """
 @def kernelfields begin
-    kernel::Kernel #Kernels function used
-    Knn::Symmetric{Float64,Matrix{Float64}} #Kernel matrix of the GP prior
-    invK::Symmetric{Float64,Matrix{Float64}} #Inverse Kernel Matrix for the nonlinear case
+    kernel::AbstractVector{Kernel} #Kernels function used
+    K::DenseVector{Symmetric{Float64,Matrix{Float64}}} #Kernel matrix
+    invK::DenseVector{Symmetric{Float64,Matrix{Float64}}} #Inverse Kernel matrix of inducing points
 end
+
 """
 Function initializing the kernelfields
 """
@@ -114,22 +118,23 @@ function initKernel!(model::GPModel,kernel::Kernel)
       @warn "No kernel indicated, a rbf kernel function with lengthscale 1 is used"
       kernel = RBFKernel(1.0)
     end
-    model.kernel = deepcopy(kernel)
+
+    model.kernel = model.AT([deepcopy(kernel) for _ in 1:(model.IndPriors ? model.nLatent : 1)])
     model.nFeatures = model.nSamples
+    model.K = model.AT([Symmetric(Matrix{Float64}(undef,model.nFeatures,model.nFeatures)) for _ in 1:(model.IndPriors ? model.nLatent : 1)])#Kernel matrix
+    model.invK = model.AT([Symmetric(Matrix{Float64}(undef,model.nFeatures,model.nFeatures)) for _ in 1:(model.IndPriors ? model.nLatent : 1)]) #Inverse Kernel matrix of inducing points
 end
 """
     Parameters necessary for the sparse inducing points method
 """
 @def sparsefields begin
     m::Int64 #Number of inducing points
-    inducingPoints::Matrix{Float64} #Inducing points coordinates for the Big Data GP
+    inducingPoints::DenseArray{Matrix{Float64}} #Inducing points coordinates for the Big Data GP
     OptimizeInducingPoints::Bool #Flag for optimizing the points during training
     optimizer::Optimizer #Optimizer for the inducing points
-    Kmm::Symmetric{Float64,Matrix{Float64}} #Kernel matrix
-    invKmm::Symmetric{Float64,Matrix{Float64}} #Inverse Kernel matrix of inducing points
-    Ktilde::Vector{Float64} #Diagonal of the covariance matrix between inducing points and generative points
-    κ::Matrix{Float64} #Kmn*invKmm
-    Knm::Matrix{Float64}
+    Ktilde::DenseArray{Vector{Float64}} #Diagonal of the covariance matrix between inducing points and generative points
+    κ::DenseArray{Matrix{Float64}} #Kmn*invKmm
+    Knm::DenseArray{Matrix{Float64}}
 end
 """
 Function initializing the sparsefields parameters
@@ -147,15 +152,13 @@ function initSparse!(model::GPModel,m,optimizeIndPoints)
     model.m = m; model.nFeatures = model.m;
     model.OptimizeInducingPoints = optimizeIndPoints
     model.optimizer = Adam(α=0.1);
-    model.inducingPoints = KMeansInducingPoints(model.X,model.m,nMarkov=10)
+    model.inducingPoints = model.AT([KMeansInducingPoints(model.X,model.m,nMarkov=10) for _ in  1:(model.IndPriors ? model.nLatent : 1)])
     if model.verbose>1
         println("Inducing points determined through KMeans algorithm")
     end
-    model.Kmm = Symmetric(Matrix{Float64}(undef,model.m,model.m)) #Kernel matrix
-    model.invKmm = Symmetric(Matrix{Float64}(undef,model.m,model.m)) #Inverse Kernel matrix of inducing points
-    model.Ktilde = Vector{Float64}(undef,model.m) #Diagonal of the covariance matrix between inducing points and generative points
-    model.κ = Matrix{Float64}(undef,model.nSamplesUsed,model.m) #Kmn*invKmm
-    model.Knm = Matrix{Float64}(undef,model.nSamplesUsed,model.m)
+    model.Ktilde = model.AT([Vector{Float64}(undef,model.m) for _ in 1:(model.IndPriors ? model.nLatent : 1)]) #Diagonal of the covariance matrix between inducing points and generative points
+    model.κ = model.AT([Matrix{Float64}(undef,model.nSamplesUsed,model.m) for _ in 1:(model.IndPriors ? model.nLatent : 1)]) #Kmn*invKmm
+    model.Knm = model.AT([Matrix{Float64}(undef,model.nSamplesUsed,model.m) for _ in 1:(model.IndPriors ? model.nLatent : 1)])
     # model.inducingPoints += rand(Normal(0,0.1),size(model.inducingPoints)...)
 end
 
@@ -164,10 +167,10 @@ end
 Parameters for the variational multivariate gaussian distribution
 """
 @def gaussianparametersfields begin
-    μ::Vector{Float64} # Mean for variational distribution
-    η_1::Vector{Float64}#Natural Parameter #1
-    Σ::Symmetric{Float64,Matrix{Float64}} # Covariance matrix of variational distribution
-    η_2::Symmetric{Float64,Matrix{Float64}} #Natural Parameter #2
+    μ::DenseArray{Vector{Float64}} # Mean for variational distribution
+    η_1::DenseArray{Vector{Float64}}#Natural Parameter #1
+    Σ::DenseArray{Symmetric{Float64,Matrix{Float64}}} # Covariance matrix of variational distribution
+    η_2::DenseArray{Symmetric{Float64,Matrix{Float64}}} #Natural Parameter #2
 end
 """
 Function for initialisation of the variational multivariate parameters
@@ -178,13 +181,13 @@ function initGaussian!(model::GPModel,μ_init::Vector{Float64})
       if model.verbose > 2
         println("***Initial mean of the variational distribution is sampled from a multivariate normal***")
       end
-      model.μ = randn(model.nFeatures)
+      model.μ = model.AT([zeros(model.nFeatures) for _ in 1:(model.IndPriors ? model.nLatent : 1)])
     else
-      model.μ = μ_init
+      model.μ = model.AT([μ_init for _ in 1:(model.IndPriors ? model.nLatent : 1)])
     end
-    model.Σ = Symmetric(Matrix{Float64}(I,model.nFeatures,model.nFeatures))
-    model.η_2 = -inv(model.Σ)*0.5
-    model.η_1 = -2.0*model.η_2*model.μ
+    model.Σ = model.AT([Symmetric(Matrix{Float64}(I,model.nFeatures,model.nFeatures)) for i in 1:(model.IndPriors ? model.nLatent : 1)])
+    model.η_2 = -inv.(model.Σ)*0.5
+    model.η_1 = -2.0.*model.η_2.*model.μ
 end
 """
     Parameters defining the available functions of the model
@@ -296,71 +299,6 @@ function initLinear!(model::GPModel,Intercept::Bool)
       model.nFeatures += 1
       model.X = [ones(Float64,model.nSamples) model.X]
     end
-end
-"""
-    Parameters of the variational distribution of the augmented variable
-"""
-@def latentfields begin
-    α::Vector{Float64}
-    θ::Vector{Float64}
-end
-
-"Initialize the latent variables"
-function initLatentVariables!(model::FullBatchModel)
-    model.α = abs.(rand(model.nSamples))*2;
-    model.θ = zeros(Float64,model.nSamples)
-end
-
-"Initialize the latent variables"
-function initLatentVariables!(model::SparseModel)
-    model.α = abs.(rand(model.nSamplesUsed))*2;
-    model.θ = zeros(Float64,model.nSamplesUsed)
-end
-
-"""
-    Parameters for online setting
-"""
-@def onlinefields begin
-    Sequential::Bool #Defines if we know how many point will be treated at the beginning
-    alldataparsed::Bool #Check if all data has been treated
-    lastindex::Int64
-    kmeansalg::KMeansAlg # Online KMean algorithm
-    indpoints_updated::Bool#Trigger for matrix computations
-    m::Int64 #Number of wanted inducing points
-    Kmm::Matrix{Float64} #Kernel matrix
-    invKmm::Matrix{Float64} #Inverse Kernel matrix of inducing points
-    Ktilde::Vector{Float64} #Diagonal of the covariance matrix between inducing points and generative points
-    κ::Matrix{Float64} #Kmn*invKmm
-end
-
-"""
-Function for initiating online parameters
-"""
-function initOnline!(model,alg::KMeansAlg,Sequential::Bool,m::Int64)
-    model.m = m
-    model.kmeansalg = alg
-    model.Sequential = Sequential
-    model.alldataparsed = false
-    model.lastindex=1
-    if Sequential
-        if typeof(alg) <: StreamOnline || typeof(alg) <: DataSelection
-            # newbatchsize = min(max(15,floor(Int64,(model.m-15)/5.0))-1,model.nSamples-model.lastindex)
-            newbatchsize = min(model.nSamplesUsed-1,model.nSamples-model.lastindex)
-            model.MBIndices = model.lastindex:(model.lastindex+newbatchsize)
-            init!(model.kmeansalg,model.X[model.MBIndices,:],model.y[model.MBIndices],model,model.m)
-        else
-            @assert model.nSamples >= model.m
-            newbatchsize = min(model.m-1,model.nSamples-model.lastindex)
-            model.MBIndices = model.lastindex:(model.lastindex+newbatchsize)
-            init!(model.kmeansalg,model.X[model.MBIndices,:],model.y[model.MBIndices],model,model.m)
-        end
-    else
-        model.MBIndices = StatsBase.sample(1:model.nSamples,model.m,replace=false) #Sample nSamplesUsed indices for the minibatches
-        init!(model.kmeansalg,model.X,model.y,model,model.m)
-    end
-    model.m = model.kmeansalg.k
-    model.nFeatures = model.m
-    model.indpoints_updated = true
 end
 
 """

@@ -31,16 +31,16 @@ end
 
 """Update the global variational parameters of the linear models"""
 function global_update!(model::FullBatchModel)
-    model.Σ = inv(model.η_2)*(-0.5);
-    model.μ = model.Σ*model.η_1 #Back to the normal distribution parameters (needed for α updates)
+    model.Σ .= inv.(model.η_2).*(-0.5);
+    model.μ .= model.Σ.*model.η_1 #Back to the normal distribution parameters (needed for α updates)
 end
 
 """"Update the global variational parameters of the sparse GP models"""
-function global_update!(model::SparseModel,grad_1::Vector{Float64},grad_2::Symmetric{Float64,Matrix{Float64}})
-    model.η_1 = (1.0-model.ρ_s)*model.η_1 + model.ρ_s*grad_1;
-    model.η_2 = Symmetric((1.0-model.ρ_s)*model.η_2 + model.ρ_s*grad_2) #Update of the natural parameters with noisy/full natural gradient
-    model.Σ = -inv(model.η_2)*0.5;
-    model.μ = model.Σ*model.η_1 #Back to the normal distribution parameters (needed for α updates)
+function global_update!(model::SparseModel,grad_1::DenseVector{Vector{Float64}},grad_2::DenseVector{Symmetric{Float64,Matrix{Float64}}})
+    model.η_1 .= model.η_1.*(1.0.-model.ρ_s) .+ grad_1.*model.ρ_s;
+    model.η_2 .= Symmetric.(model.η_2.*(1.0.-model.ρ_s) + grad_2.*model.ρ_s) #Update of the natural parameters with noisy/full natural gradient
+    model.Σ = -inv.(model.η_2).*0.5;
+    model.μ = model.Σ.*model.η_1 #Back to the normal distribution parameters (needed for α updates)
 end
 
 """Compute the KL Divergence between the GP Prior and the variational distribution for the full batch model"""
@@ -50,7 +50,7 @@ end
 
 """Compute the KL Divergence between the GP Prior and the variational distribution for the sparse model"""
 function GaussianKL(model::SparseModel)
-    return 0.5*(sum(model.invKmm.*(model.Σ+model.μ*transpose(model.μ)))-model.m-logdet(model.Σ)-logdet(model.invKmm))
+    return 0.5*sum(broadcast((invK,Σ,μ)->sum(invK.*(Σ+μ*μ'))-model.m-logdet(Σ)-logdet(invK),model.invK,model.Σ,model.μ))
 end
 
 """Return a function computing the gradient of the ELBO given the kernel hyperparameters for full batch Models"""

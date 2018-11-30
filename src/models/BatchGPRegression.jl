@@ -3,7 +3,7 @@ mutable struct BatchGPRegression <: FullBatchModel
     @commonfields
     @functionfields
     @kernelfields
-    gnoise::KernelModule.HyperParameter{Float64}
+    gnoise::DenseArray{Float64}
     """Constructor for the full batch GP Regression"""
     function BatchGPRegression(X::AbstractArray,y::AbstractArray;Autotuning::Bool=true,nEpochs::Integer = 10,
                                     kernel=0,noise::Real=1e-3,verbose::Integer=0)
@@ -14,7 +14,7 @@ mutable struct BatchGPRegression <: FullBatchModel
             initFunctions!(this);
             initKernel!(this,kernel);
             this.gnoise = KernelModule.HyperParameter{Float64}(noise,KernelModule.interval(KernelModule.OpenBound{Float64}(zero(Float64)),KernelModule.NullBound{Float64}()))
-            
+
             return this;
     end
 end

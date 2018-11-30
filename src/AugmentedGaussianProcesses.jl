@@ -54,8 +54,8 @@ using Base: show
 #Exported models
 export KMeansModule
 export LinearBSVM, BatchBSVM, SparseBSVM
-export BatchXGPC, SparseXGPC, OnlineXGPC, GibbsSamplerGPC
-export BatchGPRegression, SparseGPRegression, OnlineGPRegression
+export BatchXGPC, SparseXGPC, GibbsSamplerGPC
+export BatchGPRegression, SparseGPRegression
 export BatchStudentT, SparseStudentT
 export MultiClass, SparseMultiClass
 #General class definitions
@@ -80,17 +80,14 @@ include("models/BatchBSVM.jl")
 include("models/SparseBSVM.jl")
 include("models/BatchXGPC.jl")
 include("models/SparseXGPC.jl")
-include("models/OnlineXGPC.jl")
 include("models/GibbsSamplerGPC.jl")
 include("models/BatchGPRegression.jl")
 include("models/SparseGPRegression.jl")
-include("models/OnlineRegression.jl")
 include("models/BatchStudentT.jl")
 include("models/SparseStudentT.jl")
 include("models/MultiClass.jl")
 include("models/SparseMultiClass.jl")
 #Functions
-include("OnlineTraining.jl")
 include("OfflineTraining.jl")
 include("Autotuning.jl")
 include("Predictions.jl")

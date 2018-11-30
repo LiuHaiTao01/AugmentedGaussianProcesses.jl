@@ -15,28 +15,34 @@ if doPlots
 end
 N_data = 200
 N_test = 20
-N_dim = 2
+N_dim = 1
 noise = 0.2
 minx=-5.0
 maxx=5.0
 function latent(x)
-    # return sin.(0.5*x[:,1].*x[:,2])
-    return x[:,1].*sin.(x[:,2])
+    return sin.(0.5*x[:,1])
+    # return x[:,1].*sin.(x[:,2])
+end
+function latent2(x)
+    return exp.(-x[:,1].^2)
 end
 X = rand(N_data,N_dim)*(maxx-minx).+minx
 x_test = range(minx,stop=maxx,length=N_test)
 X_test = hcat([j for i in x_test, j in x_test][:],[i for i in x_test, j in x_test][:])
 y = latent(X)+rand(Normal(0,noise),size(X,1))
+y2 = latent2(X) + rand(Normal(0,noise),size(X,1))
 y_test = latent(X_test)
+y2_test = latent2(X_test)
+y = hcat(y,y2)
 (nSamples,nFeatures) = (N_data,1)
 ps = []; t_full = 0; t_sparse = 0; t_stoch = 0;
 
 kernel = RBFKernel(1.5)
-autotuning=true
+autotuning=!true
 optindpoints=true
-fullm=true
+fullm=!true
 sparsem=true
-stochm=true
+stochm=!true
 println("Testing the regression model")
 
 if fullm
@@ -52,13 +58,13 @@ end
 
 if sparsem
     println("Testing the sparse model")
-    t_sparse = @elapsed sparsemodel = AugmentedGaussianProcesses.SparseGPRegression(X,y,Stochastic=false,Autotuning=autotuning,verbose=verbose,m=20,noise=noise,kernel=kernel,OptimizeIndPoints=optindpoints)
+    t_sparse = @elapsed sparsemodel = AugmentedGaussianProcesses.SparseGPRegression(X,y,Stochastic=false,Autotuning=autotuning,verbose=verbose,m=20,noise=noise,kernel=kernel,OptimizeIndPoints=optindpoints,AdaptiveLearningRate=false)
     # setfixed!(sparsemodel.noise)
     t_sparse += @elapsed sparsemodel.train(iterations=1000)
-    y_sparse = sparsemodel.predict(X_test); rmse_sparse = norm(y_sparse-y_test,2)/sqrt(length(y_test))
+    y_sparse = sparsemodel.predict(X_test)[1]; rmse_sparse = norm(y_sparse-y_test,2)/sqrt(length(y_test))
     if doPlots
         p2=plot(x_test,x_test,reshape(y_sparse,N_test,N_test),t=:contour,fill=true,cbar=false,clims=[-5,5],lab="",title="Sparse Regression")
-        plot!(sparsemodel.inducingPoints[:,1],sparsemodel.inducingPoints[:,2],t=:scatter,lab="inducing points")
+        plot!(sparsemodel.inducingPoints[1][:,1],sparsemodel.inducingPoints[1][:,2],t=:scatter,lab="inducing points")
         push!(ps,p2)
     end
 end

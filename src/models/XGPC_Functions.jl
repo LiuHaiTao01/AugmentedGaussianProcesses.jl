@@ -11,20 +11,6 @@ function local_update!(model::SparseXGPC)
     model.θ = 0.5*tanh.(0.5*model.c)./model.c
 end
 
-"""Update the local variational parameters of the online GP XGPC"""
-function local_update!(model::OnlineXGPC)
-    model.c = sqrt.(model.Ktilde+sum((model.κ*model.Σ).*model.κ,dims=2)[:]+(model.κ*model.μ).^2)
-    model.θ = 0.5*tanh.(0.5*model.c)./model.c
-end
-
-"Compute the variational updates for the online GP XGPC"
-function variational_updates!(model::OnlineXGPC,iter::Integer)
-    local_update!(model)
-    (grad_η_1,grad_η_2) = natural_gradient_XGPC(model)
-    computeLearningRate_Stochastic!(model,iter,grad_η_1,grad_η_2);
-    global_update!(model,grad_η_1,grad_η_2)
-end
-
 """Return the natural gradients of the ELBO given the natural parameters"""
 function natural_gradient(model::BatchXGPC)
     model.η_1 =  0.5*model.y
@@ -75,13 +61,6 @@ function PolyaGammaKL(model::GPModel)
     return sum(-0.5*model.c.^2 .* model.θ .+ log.(cosh.(0.5.*model.c)))
 end
 
-"Compute the negative ELBO for the sparse XGPC Model"
-function ELBO(model::OnlineXGPC)
-    ELBO_v = model.StochCoeff*ExpecLogLikelihood(model)
-    ELBO_v -= GaussianKL(model)
-    ELBO_v -= model.StochCoeff*PolyaGammaKL(model)
-    return -ELBO_v
-end
 "Return a function computing the gradient of the ELBO given the kernel hyperparameters for a XGPC Model"
 function hyperparameter_gradient_function(model::SparseXGPC)
     F2 = Symmetric(model.μ*transpose(model.μ) + model.Σ)

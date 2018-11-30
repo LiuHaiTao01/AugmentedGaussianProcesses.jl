@@ -35,7 +35,8 @@ using .HyperParametersModule:
 
 import Base: *, +, getindex, show
 export Kernel, KernelSum, KernelProduct
-export RBFKernel, SEKernel, LaplaceKernel, SigmoidKernel, PolynomialKernel, ARDKernel, MaternKernel, Matern5_2Kernel
+export IsoKernel, ARDKernel
+export RBFKernel, SEKernel, LaplaceKernel, SigmoidKernel, PolynomialKernel, MaternKernel, Matern5_2Kernel
 export kernelmatrix,kernelmatrix!,kerneldiagmatrix,kerneldiagmatrix!
 export computeIndPointsJ
 export apply_gradients_lengthscale!, apply_gradients_variance!, apply_gradients!
