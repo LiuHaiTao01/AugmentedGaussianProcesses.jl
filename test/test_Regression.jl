@@ -14,7 +14,7 @@ if doPlots
     pyplot()
 end
 N_data = 200
-N_test = 20
+N_test = 200
 N_dim = 1
 noise = 0.2
 minx=-5.0
@@ -24,10 +24,11 @@ function latent(x)
     # return x[:,1].*sin.(x[:,2])
 end
 function latent2(x)
-    return exp.(-x[:,1].^2)
+    return sin.(x[:,1]).*exp.(-x[:,1].^2)
 end
 X = rand(N_data,N_dim)*(maxx-minx).+minx
 x_test = range(minx,stop=maxx,length=N_test)
+
 X_test = hcat([j for i in x_test, j in x_test][:],[i for i in x_test, j in x_test][:])
 y = latent(X)+rand(Normal(0,noise),size(X,1))
 y2 = latent2(X) + rand(Normal(0,noise),size(X,1))
@@ -60,11 +61,14 @@ if sparsem
     println("Testing the sparse model")
     t_sparse = @elapsed sparsemodel = AugmentedGaussianProcesses.SparseGPRegression(X,y,Stochastic=false,Autotuning=autotuning,verbose=verbose,m=20,noise=noise,kernel=kernel,OptimizeIndPoints=optindpoints,AdaptiveLearningRate=false)
     # setfixed!(sparsemodel.noise)
-    t_sparse += @elapsed sparsemodel.train(iterations=1000)
-    y_sparse = sparsemodel.predict(X_test)[1]; rmse_sparse = norm(y_sparse-y_test,2)/sqrt(length(y_test))
+    t_sparse += @elapsed sparsemodel.train(iterations=100)
+    global y_sparse = sparsemodel.predict(collect(x_test));
+    # rmse_sparse = norm(y_sparse[1]-y_test,2)/sqrt(length(y_test))
     if doPlots
-        p2=plot(x_test,x_test,reshape(y_sparse,N_test,N_test),t=:contour,fill=true,cbar=false,clims=[-5,5],lab="",title="Sparse Regression")
-        plot!(sparsemodel.inducingPoints[1][:,1],sparsemodel.inducingPoints[1][:,2],t=:scatter,lab="inducing points")
+        p2=plot(x_test,y_sparse[1],lab="",title="Sparse Regression 1")
+        plot!(p2,x_test,y_sparse[2],lab="")
+        plot!(sparsemodel.inducingPoints[1],zeros(sparsemodel.m),t=:scatter,lab="inducing points 1")
+        plot!(sparsemodel.inducingPoints[2],zeros(sparsemodel.m),t=:scatter,lab="inducing points 2")
         push!(ps,p2)
     end
 end
@@ -81,12 +85,14 @@ if stochm
     end
 end
 t_full != 0 ? println("Full model : RMSE=$(rmse_full), time=$t_full") : nothing
-t_sparse != 0 ? println("Sparse model : RMSE=$(rmse_sparse), time=$t_sparse") : nothing
+# t_sparse != 0 ? println("Sparse model : RMSE=$(rmse_sparse), time=$t_sparse") : nothing
 t_stoch != 0 ? println("Stoch. Sparse model : RMSE=$(rmse_stoch), time=$t_stoch") : nothing
 
 if doPlots
-    ptrue=plot(x_test,x_test,reshape(latent(X_test),N_test,N_test),t=:contour,fill=true,cbar=false,clims=[-5,5],lab="")
-    plot!(ptrue,X[:,1],X[:,2],t=:scatter,lab="training points",title="Truth")
+    ptrue=plot(x_test,latent(x_test),lab="")
+    plot!(ptrue,x_test,latent2(x_test),lab="")
+    # plot!(ptrue,X[:,1],X[:,2],t=:scatter,lab="training points",title="Truth")
+    # plot!(ptrue,X[:,1],X[:,2],t=:scatter,lab="training points",title="Truth")
     display(plot(ptrue,ps...))
 end
 
