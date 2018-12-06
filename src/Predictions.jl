@@ -5,16 +5,14 @@ Compute the mean of the predicted latent distribution of f on X_test for full GP
 Return also the variance if `covf=true`
 """
 function fstar(model::FullBatchModel,X_test::AbstractArray;covf::Bool=true)
-    if model.TopMatrixForPrediction == 0
-        model.TopMatrixForPrediction = model.invK*model.μ
-    end
-    k_star = kernelmatrix(X_test,model.X,model.kernel)
-    mean_fstar = k_star*model.TopMatrixForPrediction
+    model.TopMatrixForPrediction = model.invK.*model.μ
+    k_star = [kernelmatrix(X_test,model.X,kernel) for kernel in model.kernel]
+    mean_fstar = k_star.*model.TopMatrixForPrediction
     if !covf
         return mean_fstar
     end
-    model.DownMatrixForPrediction = (model.invK*(Diagonal{Float64}(I,model.nSamples)-model.Σ*model.invK))
-    cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .- sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2)[:]
+    model.DownMatrixForPrediction = model.invK.*(I.-model.Σ.*model.invK)
+    cov_fstar = broadcast((kernel,k,A)->kerneldiagmatrix(X_test,kernel)  .- vec(sum((k*A).*k,dims=2)),model.kernel,k_star,model.DownMatrixForPrediction)
     return mean_fstar,cov_fstar
 end
 
@@ -34,46 +32,20 @@ function fstar(model::SparseModel,X_test::AbstractArray;covf::Bool=true)
     return mean_fstar,cov_fstar
 end
 
-"""
-Compute the mean of the predicted latent distribution of f on X_test for online GP models
-Return also the variance if `covf=true`
-"""
-function fstar(model::OnlineGPModel,X_test::AbstractArray;covf::Bool=true)
-    if model.TopMatrixForPrediction == 0
-        model.TopMatrixForPrediction = model.invKmm*model.μ
-    end
-    if covf && model.DownMatrixForPrediction == 0
-      model.DownMatrixForPrediction = (model.invKmm*(Diagonal{Float64}(I,model.nFeatures)-model.Σ*model.invKmm))
-    end
-    k_star = kernelmatrix(X_test,model.kmeansalg.centers,model.kernel)
-    mean_fstar = k_star*model.TopMatrixForPrediction
-    if !covf
-        return mean_fstar
-    else
-        cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .- sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2)[:]
-        return mean_fstar,cov_fstar
-    end
-end
 
 """
 Compute the mean of the predicted latent distribution of f on X_test for GP regression
 Return also the variance if `covf=true`
 """
 function fstar(model::BatchGPRegression,X_test::AbstractArray;covf::Bool=true)
-    if model.TopMatrixForPrediction == 0
-        model.TopMatrixForPrediction = model.invK*model.y
-    end
-    if covf && model.DownMatrixForPrediction == 0
-      model.DownMatrixForPrediction = model.invK
-    end
-    k_star = kernelmatrix(X_test,model.X,model.kernel)
-    mean_fstar = k_star*model.TopMatrixForPrediction
+    model.TopMatrixForPrediction = model.invK.*model.y
+    k_star = [kernelmatrix(X_test,model.X,kernel) for kernel in model.kernel]
+    mean_fstar = k_star.*model.TopMatrixForPrediction
     if !covf
         return mean_fstar
-    else
-        cov_fstar = kerneldiagmatrix(X_test,model.kernel) .+ getvalue(model.noise) .- sum((k_star*model.DownMatrixForPrediction).*k_star,dims=2)[:]
-        return mean_fstar,cov_fstar
     end
+    cov_fstar = broadcast((kernel,k,A)->kerneldiagmatrix(X_test,kernel) .- vec(sum((k*A).*k,dims=2)),model.kernel,k_star,model.invK)
+    return mean_fstar,cov_fstar
 end
 
 """
@@ -81,29 +53,20 @@ Compute the mean of the predicted latent distribution of f on X_test for Multicl
 Return also the variance if `covf=true`
 """
 function fstar(model::MultiClass,X_test::AbstractArray;covf::Bool=true)
-    if model.TopMatrixForPrediction == 0
-        model.TopMatrixForPrediction = broadcast((mu,invK)->invK*mu,model.μ,model.invK)
-    end
-    if covf && model.DownMatrixForPrediction == 0
-      model.DownMatrixForPrediction = broadcast((var,invK)->invK*(Diagonal{Float64}(I,model.nSamples)-var*invK),model.Σ,model.invK)
-    end
-    if model.IndependentGPs
-        k_star = [kernelmatrix(X_test,model.X,model.kernel[i]) for i in 1:model.K]
-    else
-        k_star = [kernelmatrix(X_test,model.X,model.kernel[1])]
-    end
+    model.TopMatrixForPrediction = model.invK.*model.μ
+    k_star = [kernelmatrix(X_test,model.X,kernel) for kernel in model.kernel]
     mean_fstar = broadcast((k_s,m)->k_s*m,k_star,model.TopMatrixForPrediction)
     if !covf
         return mean_fstar
-    else
-        if model.IndependentGPs
-            k_starstar = [kerneldiagmatrix(X_test,model.kernel[i]) for i in 1:model.K]
-        else
-            k_starstar = [kerneldiagmatrix(X_test,model.kernel[1])]
-        end
-        cov_fstar = broadcast((k_ss,k_s,x)->(k_ss .+ getvalue(model.noise).- sum((k_s*x).*k_s,dims=2)[:]),k_starstar,k_star,model.DownMatrixForPrediction)
-        return mean_fstar,cov_fstar
     end
+    model.DownMatrixForPrediction = broadcast((var,invK)->invK*(Diagonal{Float64}(I,model.nSamples)-var*invK),model.Σ,model.invK)
+    if model.IndependentGPs
+        k_starstar = [kerneldiagmatrix(X_test,model.kernel[i]) for i in 1:model.K]
+    else
+        k_starstar = [kerneldiagmatrix(X_test,model.kernel[1])]
+    end
+    cov_fstar = broadcast((k_ss,k_s,x)->(k_ss .- vec(sum((k_s*x).*k_s,dims=2))),k_starstar,k_star,model.DownMatrixForPrediction)
+    return mean_fstar,cov_fstar
 end
 
 """
@@ -215,15 +178,6 @@ function logitpredictproba(model::GPModel,X_test::AbstractArray)
         end
     end
     return pred
-end
-
-"""Return the mean of the predictive distribution of f"""
-function regpredict(model::BatchGPRegression,X_test::AbstractArray)
-    if model.TopMatrixForPrediction == 0
-        model.TopMatrixForPrediction = model.invK*model.y
-    end
-    k_star = kernelmatrix(X_test,model.X,model.kernel)
-    return k_star*model.TopMatrixForPrediction
 end
 
 """Return the mean of the predictive distribution of f"""

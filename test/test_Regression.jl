@@ -13,10 +13,10 @@ if doPlots
     using Plots
     pyplot()
 end
-N_data = 200
+N_data = 100
 N_test = 200
 N_dim = 1
-noise = 0.2
+noise = 0.1
 minx=-5.0
 maxx=5.0
 function latent(x)
@@ -32,43 +32,42 @@ x_test = range(minx,stop=maxx,length=N_test)
 X_test = hcat([j for i in x_test, j in x_test][:],[i for i in x_test, j in x_test][:])
 y = latent(X)+rand(Normal(0,noise),size(X,1))
 y2 = latent2(X) + rand(Normal(0,noise),size(X,1))
-y_test = latent(X_test)
-y2_test = latent2(X_test)
+y_test = latent(x_test)
+y2_test = latent2(x_test)
 y = hcat(y,y2)
 (nSamples,nFeatures) = (N_data,1)
 ps = []; t_full = 0; t_sparse = 0; t_stoch = 0;
 
 kernel = RBFKernel(1.5)
-autotuning=!true
-optindpoints=true
-fullm=!true
-sparsem=true
+autotuning=true
+optindpoints=!true
+fullm=true
+sparsem=!true
 stochm=!true
 println("Testing the regression model")
 
 if fullm
     println("Testing the full model")
-    t_full = @elapsed fullmodel = AugmentedGaussianProcesses.BatchGPRegression(X,y,noise=noise,Autotuning=autotuning,kernel=kernel,verbose=verbose)
+    t_full = @elapsed fullmodel = AugmentedGaussianProcesses.BatchGPRegression(X,y,noise=noise,Autotuning=autotuning,kernel=kernel,verbose=verbose,IndPriors=!true)
     t_full += @elapsed fullmodel.train(iterations=50)
-    y_full = fullmodel.predict(X_test); rmse_full = norm(y_full-y_test,2)/sqrt(length(y_test))
+    y_full = fullmodel.predict(collect(x_test)); rmse_full = norm(y_full[1]-y_test,2)/sqrt(length(y_test))
     if doPlots
-        p1=plot(x_test,x_test,reshape(y_full,N_test,N_test),t=:contour,fill=true,cbar=false,clims=[-5,5],lab="",title="Regression")
+        p1=plot(x_test,y_full,lab="",title="Regression")
         push!(ps,p1)
     end
 end
 
 if sparsem
     println("Testing the sparse model")
-    t_sparse = @elapsed sparsemodel = AugmentedGaussianProcesses.SparseGPRegression(X,y,Stochastic=false,Autotuning=autotuning,verbose=verbose,m=20,noise=noise,kernel=kernel,OptimizeIndPoints=optindpoints,AdaptiveLearningRate=false)
-    # setfixed!(sparsemodel.noise)
-    t_sparse += @elapsed sparsemodel.train(iterations=100)
+    t_sparse = @elapsed sparsemodel = AugmentedGaussianProcesses.SparseGPRegression(X,y,Stochastic=false,IndPriors=true,Autotuning=autotuning,verbose=verbose,m=10,noise=noise,kernel=kernel,OptimizeIndPoints=optindpoints,AdaptiveLearningRate=false)
+    t_sparse += @elapsed sparsemodel.train(iterations=1000)
     global y_sparse = sparsemodel.predict(collect(x_test));
-    # rmse_sparse = norm(y_sparse[1]-y_test,2)/sqrt(length(y_test))
+    rmse_sparse = norm(y_sparse[1]-y_test,2)/sqrt(length(y_test))
     if doPlots
         p2=plot(x_test,y_sparse[1],lab="",title="Sparse Regression 1")
         plot!(p2,x_test,y_sparse[2],lab="")
         plot!(sparsemodel.inducingPoints[1],zeros(sparsemodel.m),t=:scatter,lab="inducing points 1")
-        plot!(sparsemodel.inducingPoints[2],zeros(sparsemodel.m),t=:scatter,lab="inducing points 2")
+        plot!(sparsemodel.inducingPoints[1],zeros(sparsemodel.m),t=:scatter,lab="inducing points 2")
         push!(ps,p2)
     end
 end
@@ -85,14 +84,13 @@ if stochm
     end
 end
 t_full != 0 ? println("Full model : RMSE=$(rmse_full), time=$t_full") : nothing
-# t_sparse != 0 ? println("Sparse model : RMSE=$(rmse_sparse), time=$t_sparse") : nothing
+t_sparse != 0 ? println("Sparse model : RMSE=$(rmse_sparse), time=$t_sparse") : nothing
 t_stoch != 0 ? println("Stoch. Sparse model : RMSE=$(rmse_stoch), time=$t_stoch") : nothing
 
 if doPlots
     ptrue=plot(x_test,latent(x_test),lab="")
     plot!(ptrue,x_test,latent2(x_test),lab="")
-    # plot!(ptrue,X[:,1],X[:,2],t=:scatter,lab="training points",title="Truth")
-    # plot!(ptrue,X[:,1],X[:,2],t=:scatter,lab="training points",title="Truth")
+    plot!(ptrue,X,y,t=:scatter,lab=["y1" "y2"])
     display(plot(ptrue,ps...))
 end
 

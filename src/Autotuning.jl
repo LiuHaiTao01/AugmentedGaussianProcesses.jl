@@ -9,34 +9,45 @@ end
 
 "Update all hyperparameters for the full batch GP models"
 function  updateHyperParameters!(model::FullBatchModel)
-    Jnn = kernelderivativematrix(model.X,model.kernel) #Compute all the derivatives of the matrix Knn given the kernel parameters
-    f_l,f_v,f_n = hyperparameter_gradient_function(model)
-    grads_l = compute_hyperparameter_gradient(model.kernel,f_l,Jnn)
-    grads_v = f_v(model.kernel)
-    grads_n = f_n()
-    apply_gradients_lengthscale!(model.kernel,grads_l) #Send the derivative of the matrix to the specific gradient of the model
-    apply_gradients_variance!(model.kernel,grads_v) #Send the derivative of the matrix to the specific gradient of the model
-    apply_gradients_noise!(model,grads_n)
-
+    Jnn = [kernelderivativematrix(model.X,kernel) for kernel in model.kernel] #Compute all the derivatives of the matrix Knn given the kernel parameters
+    f_l,f_v = hyperparameter_gradient_function(model)
+    if model.IndPriors
+        grads_l = map(compute_hyperparameter_gradient,model.kernel,[f_l for _ in 1:model.nLatent],Jnn,1:model.nLatent,1:model.nLatent)
+        grads_v = map(f_v,model.kernel,1:model.nLatent,1:model.nLatent)
+    else
+        grads_l = compute_hyperparameter_gradient(model.kernel[1],f_l,Jnn[1],1,1)
+        grads_v = [f_v(model.kernel[1],1,1)]
+    end
+    apply_gradients_lengthscale!.(model.kernel,grads_l) #Send the derivative of the matrix to the specific gradient of the model
+    apply_gradients_variance!.(model.kernel,grads_v) #Send the derivative of the matrix to the specific gradient of the model
     model.HyperParametersUpdated = true
 end
 
 "Update all hyperparameters for the full batch GP models"
 function updateHyperParameters!(model::SparseModel)
-    Jmm = kernelderivativematrix(model.inducingPoints,model.kernel) #Compute all the derivatives of the matrix Kmm given the kernel
-    Jnm = kernelderivativematrix(model.X[model.MBIndices,:],model.inducingPoints,model.kernel) #Compute all the derivative of the matrix Knm given the kernel
-    Jnn = kernelderivativediagmatrix(model.X[model.MBIndices,:],model.kernel) #Compute all the derivatives of the diagonal matrix Knn given the kernel
-    f_l,f_v,f_n = hyperparameter_gradient_function(model)
-    grads_l = compute_hyperparameter_gradient(model.kernel,f_l,[Jmm,Jnm,Jnn])
-    grads_v = f_v(model.kernel)
-    grads_n = f_n()
+    f_l,f_v = hyperparameter_gradient_function(model)
+    # Jmm = [kernelderivativematrix(Xᵤ,kernel) for (Xᵤ,kernel) in zip(model.inducingPoints,model.kernel)] #Compute all the derivatives of the matrix Kmm given the kernel
+    # Jnm = [kernelderivativematrix(model.X[model.MBIndices,:],Xᵤ,kernel) for (Xᵤ,kernel) in zip(model.inducingPoints,model.kernel)]#Compute all the derivative of the matrix Knm given the kernel
+    # Jnn = [kernelderivativediagmatrix(model.X[model.MBIndices,:],kernel) for kernel in model.kernel] #Compute all the derivatives of the diagonal matrix Knn given the kernel
+    if model.IndPriors
+        matrix_derivatives =[[kernelderivativematrix(Xᵤ,kernel),
+        kernelderivativematrix(model.X[model.MBIndices,:],Xᵤ,kernel),
+        kernelderivativediagmatrix(model.X[model.MBIndices,:],kernel)] for (Xᵤ,kernel) in zip(model.inducingPoints,model.kernel)]
+        grads_l = map(compute_hyperparameter_gradient,model.kernel,[f_l for _ in 1:model.nLatent],matrix_derivatives,1:model.nLatent,1:model.nLatent)
+        grads_v = map(f_v,model.kernel,1:model.nLatent)
+    else
+        matrix_derivatives = [kernelderivativematrix(model.inducingPoints[1],model.kernel[1]),
+                            kernelderivativematrix(model.X[model.MBIndices,:],model.inducingPoints[1],model.kernel[1]),
+                            kernelderivativediagmatrix(model.X[model.MBIndices,:],model.kernel[1])]
+        grads_l = [compute_hyperparameter_gradient(model.kernel[1],f_l,matrix_derivatives,1,1)]
+        grads_v = [f_v(model.kernel[1],1)]
+    end
     if model.OptimizeInducingPoints
         inducingpoints_gradients = inducingpoints_gradient(model) #Compute the gradient given the inducing points location
         model.inducingPoints += GradDescent.update(model.optimizer,inducingpoints_gradients) #Apply the gradients on the location
     end
-    apply_gradients_lengthscale!(model.kernel,grads_l)
-    apply_gradients_variance!(model.kernel,grads_v)
-    apply_gradients_noise!(model,grads_n)
+    apply_gradients_lengthscale!.(model.kernel,grads_l)
+    apply_gradients_variance!.(model.kernel,grads_v)
     model.HyperParametersUpdated = true
 end
 

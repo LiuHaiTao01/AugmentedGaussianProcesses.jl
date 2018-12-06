@@ -39,12 +39,11 @@ end
 """
     initCommon!(model,...)
 
-Initialize all the common fields of the different models, i.e. the dataset inputs `X` and outputs `y`,
-the noise `noise`, the convergence threshold `ϵ`, the initial number of iterations `nEpochs`,
+Initialize all the common fields of the different models, i.e. the dataset inputs `X` and outputs `y`, the convergence threshold `ϵ`, the initial number of iterations `nEpochs`,
 the `verboseLevel` (from 0 to 3), enabling `Autotuning`, the `AutotuningFrequency` and
 what `optimizer` to use
 """
-function initCommon!(model::GPModel,AT::UnionAll,X::Array{T,N},y::Array{T2},IndPriors::Bool,noise::Float64,ϵ::Float64,nEpochs::Integer,verbose::Integer,Autotuning::Bool,AutotuningFrequency::Integer,optimizer::Optimizer) where {T<:Real,T2<:Real,N}
+function initCommon!(model::GPModel,AT::UnionAll,X::Array{T,N},y::Array{T2},IndPriors::Bool,ϵ::Float64,nEpochs::Integer,verbose::Integer,Autotuning::Bool,AutotuningFrequency::Integer,optimizer::Optimizer) where {T<:Real,T2<:Real,N}
     @assert (size(y,1)==size(X,1)) "There is a dimension problem with the data size(y)!=size(X)";
     model.AT = AT
     model.IndPriors = IndPriors
@@ -181,11 +180,11 @@ function initGaussian!(model::GPModel,μ_init::Vector{Float64})
       if model.verbose > 2
         println("***Initial mean of the variational distribution is sampled from a multivariate normal***")
       end
-      model.μ = model.AT([zeros(model.nFeatures) for _ in 1:(model.IndPriors ? model.nLatent : 1)])
+      model.μ = model.AT([zeros(model.nFeatures) for _ in 1:model.nLatent])
     else
-      model.μ = model.AT([μ_init for _ in 1:(model.IndPriors ? model.nLatent : 1)])
+      model.μ = model.AT([μ_init for _ in 1:model.nLatent])
     end
-    model.Σ = model.AT([Symmetric(Matrix{Float64}(I,model.nFeatures,model.nFeatures)) for i in 1:(model.IndPriors ? model.nLatent : 1)])
+    model.Σ = model.AT([Symmetric(Matrix{Float64}(I,model.nFeatures,model.nFeatures)) for i in 1:model.nLatent])
     model.η_2 = -inv.(model.Σ)*0.5
     model.η_1 = -2.0.*model.η_2.*model.μ
 end
