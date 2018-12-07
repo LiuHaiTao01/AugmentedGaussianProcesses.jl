@@ -182,19 +182,31 @@ end
 
 """Return the mean of the predictive distribution of f"""
 function regpredict(model::GPModel,X_test::AbstractArray)
-    return fstar(model,X_test,covf=false)
+    if model.nLatent == 1
+        return fstar(model,X_test,covf=false)[1]
+    else
+        return fstar(model,X_test,covf=false)
+    end
 end
 
 """Return the mean and variance of the predictive distribution of f"""
 function regpredictproba(model::GPModel,X_test::AbstractArray)
-    m_f,cov_f =  fstar(model,X_test,covf=true)
-    cov_f .+= getvalue(model.gnoise)
-    return m_f,cov_f
+    m_f,cov_f = fstar(model,X_test,covf=true)
+    broadcast((x,σ)-> x .+= σ,cov_f,model.gnoise)
+    if model.nLatent==1
+        return m_f[1],cov_f[1]
+    else
+        return m_f,cov_f
+    end
 end
 
 """Return the mean of the predictive distribution of f"""
 function studenttpredict(model::GPModel,X_test::AbstractArray)
-    return fstar(model,X_test,covf=false)
+    if model.nLatent == 1
+        return fstar(model,X_test,covf=false)[1]
+    else
+        return fstar(model,X_test,covf=false)
+    end
 end
 
 
